@@ -23,3 +23,11 @@ data/ticket_log.dat
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Internal reference and planning files (kept locally, not pushed to repo)
+BUILD_PLAN.md
+AGENTS.md
+.agents/
+*.html
+*plan*.md
+
