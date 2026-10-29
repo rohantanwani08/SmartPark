@@ -245,26 +245,50 @@ public class ConsoleMenu {
 
     private void handleViewTicketHistory() {
         List<Ticket> history = parkingLot.getTicketHistory();
-        System.out.println("\n--- Completed Ticket History (" + history.size() + ") ---");
+        System.out.println("\n--- Current Session Completed Tickets (" + history.size() + ") ---");
         if (history.isEmpty()) {
-            System.out.println("No completed parking sessions recorded yet.");
-            return;
+            System.out.println("No vehicles have completed departure during this active runtime session.");
+        } else {
+            System.out.println("--------------------------------------------------------------------------------------------");
+            System.out.printf("%-8s | %-16s | %-8s | %-10s | %-19s | %-19s%n",
+                    "Ticket", "Plate Number", "Type", "Slot", "Entry Time", "Exit Time");
+            System.out.println("--------------------------------------------------------------------------------------------");
+            for (Ticket t : history) {
+                System.out.printf("#%-7d | %-16s | %-8s | %-10s | %-19s | %-19s%n",
+                        t.getTicketId(),
+                        t.getVehicle().getPlateNumber(),
+                        t.getVehicle().getVehicleType(),
+                        t.getParkingSlot().getSlotId(),
+                        formatTime(t.getEntryTimeMillis()),
+                        formatTime(t.getExitTimeMillis()));
+            }
+            System.out.println("--------------------------------------------------------------------------------------------");
         }
 
-        System.out.println("--------------------------------------------------------------------------------------------");
-        System.out.printf("%-8s | %-16s | %-8s | %-10s | %-19s | %-19s%n",
-                "Ticket", "Plate Number", "Type", "Slot", "Entry Time", "Exit Time");
-        System.out.println("--------------------------------------------------------------------------------------------");
-        for (Ticket t : history) {
-            System.out.printf("#%-7d | %-16s | %-8s | %-10s | %-19s | %-19s%n",
-                    t.getTicketId(),
-                    t.getVehicle().getPlateNumber(),
-                    t.getVehicle().getVehicleType(),
-                    t.getParkingSlot().getSlotId(),
-                    formatTime(t.getEntryTimeMillis()),
-                    formatTime(t.getExitTimeMillis()));
+        // Display historical binary ledger audit entries
+        if (parkingLot.getFileManager() != null) {
+            try {
+                List<smartpark.service.FileManager.AuditLogEntry> logs =
+                        parkingLot.getFileManager().readBinaryLogs();
+                System.out.println("\n--- Persistent Binary Ledger Audit Trail [data/ticket_log.dat] (" + logs.size() + " records) ---");
+                if (logs.isEmpty()) {
+                    System.out.println("Binary audit log file is empty.");
+                } else {
+                    System.out.println("--------------------------------------------------------------------------------------------");
+                    System.out.printf("%-8s | %-16s | %-8s | %-12s | %-6s | %-19s%n",
+                            "Ticket", "Plate Number", "Type", "Fee Paid", "Mode", "Exit Time");
+                    System.out.println("--------------------------------------------------------------------------------------------");
+                    for (smartpark.service.FileManager.AuditLogEntry log : logs) {
+                        System.out.printf("#%-7d | %-16s | %-8s | Rs. %-8.2f | %-6s | %-19s%n",
+                                log.getTicketId(), log.getPlateNumber(), log.getVehicleType(),
+                                log.getFeePaid(), log.getPaymentMode(), formatTime(log.getExitTimeMillis()));
+                    }
+                    System.out.println("--------------------------------------------------------------------------------------------");
+                }
+            } catch (Exception e) {
+                System.out.println("[WARN] Could not read binary log ledger: " + e.getMessage());
+            }
         }
-        System.out.println("--------------------------------------------------------------------------------------------");
     }
 
     private void handleExitSystem() {

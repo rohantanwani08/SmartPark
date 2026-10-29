@@ -27,6 +27,7 @@ public class ParkingLot {
     private final List<Ticket> activeTickets;
     private final List<Ticket> ticketHistory;
     private double totalRevenue;
+    private FileManager fileManager;
 
     /**
      * Constructs a ParkingLot service instance with designated floors.
@@ -47,6 +48,24 @@ public class ParkingLot {
         this.activeTickets = new ArrayList<>();
         this.ticketHistory = new ArrayList<>();
         this.totalRevenue = 0.0;
+        this.fileManager = null;
+    }
+
+    public void setFileManager(FileManager fileManager) {
+        this.fileManager = fileManager;
+    }
+
+    public FileManager getFileManager() {
+        return fileManager;
+    }
+
+    /**
+     * Re-inserts an active ticket directly during persistence file reload.
+     */
+    public void restoreActiveTicket(Ticket ticket) {
+        if (ticket != null) {
+            this.activeTickets.add(ticket);
+        }
     }
 
     public String getLotName() {
@@ -119,6 +138,16 @@ public class ParkingLot {
         freeSlot.assignVehicle(vehicle);
         Ticket ticket = new Ticket(vehicle, freeSlot);
         activeTickets.add(ticket);
+
+        // Auto-persist active state to CSV file
+        if (fileManager != null) {
+            try {
+                fileManager.saveActiveTickets(activeTickets);
+            } catch (Exception e) {
+                System.err.println("[WARN] Failed to auto-persist active tickets: " + e.getMessage());
+            }
+        }
+
         return ticket;
     }
 
@@ -174,6 +203,16 @@ public class ParkingLot {
         activeTickets.remove(ticket);
         ticketHistory.add(ticket);
         totalRevenue += fee;
+
+        // Auto-persist active state and append transaction to binary audit ledger
+        if (fileManager != null) {
+            try {
+                fileManager.saveActiveTickets(activeTickets);
+                fileManager.appendClosedTicketLog(ticket, fee, paymentMethod.getMode());
+            } catch (Exception e) {
+                System.err.println("[WARN] Failed to record transaction in persistence ledger: " + e.getMessage());
+            }
+        }
 
         return ticket;
     }
