@@ -1,110 +1,93 @@
 package smartpark;
 
-import smartpark.exception.InvalidVehicleException;
-import smartpark.model.Bike;
+import smartpark.exception.PaymentFailedException;
 import smartpark.model.Car;
-import smartpark.model.Floor;
-import smartpark.model.ParkingSlot;
-import smartpark.model.Ticket;
 import smartpark.model.Truck;
-import smartpark.model.Vehicle;
+import smartpark.service.CashPayment;
+import smartpark.service.Payment;
+import smartpark.service.UPIPayment;
 
 /**
  * SmartPark - Entry Point
- * Phase 3: Verification of ParkingSlot, Floor (Composition), and Ticket (Static Counter & Duration Math)
+ * Phase 4: Verification of Payment Strategy Subsystem (Interface, CashPayment, UPIPayment)
  */
 public class Main {
     public static void main(String[] args) {
         System.out.println("================================================================");
         System.out.println("        SmartPark: Object-Oriented Parking System               ");
-        System.out.println("   Phase 3: Slot, Floor & Ticket Verification                   ");
+        System.out.println("   Phase 4: Payment Strategy Subsystem Verification             ");
         System.out.println("================================================================");
 
         try {
-            // 1. Composition Verification: Floor manages ParkingSlot[]
-            // Floor 1 with 2 Car slots, 2 Bike slots, 1 Truck slot
-            Floor floor1 = new Floor(1, 2, 2, 1);
-            System.out.println("\n[1] Floor Initialization (Composition):");
-            System.out.println(" - " + floor1);
-            System.out.println(" - Total Slots Allocated: " + floor1.getTotalSlots());
-            System.out.println(" - Free Car Slots: " + floor1.getFreeCount("Car"));
-            System.out.println(" - Free Bike Slots: " + floor1.getFreeCount("Bike"));
-            System.out.println(" - Free Truck Slots: " + floor1.getFreeCount("Truck"));
+            Car car = new Car("MH-12-DE-1111", "Rohan Tanwani");
+            Truck truck = new Truck("MH-04-TR-5555", "Baljit Logistics", "Diesel", 16.5);
 
-            // 2. Vehicle Creation
-            Car car1 = new Car("MH-12-AB-1001", "Rohan Tanwani");
-            Car car2 = new Car("MH-12-CD-2002", "Priya Sharma");
-            Bike bike1 = new Bike("MH-14-XY-3003", "Amit Verma");
-            Truck truck1 = new Truck("MH-04-TR-4004", "Baljit Logistics", "Diesel", 14.0);
+            double carFee = car.calculateFee(3);    // 3 hrs * Rs. 40 = Rs. 120.00
+            double truckFee = truck.calculateFee(3); // 3 hrs * Rs. 80 * 1.10 = Rs. 264.00
 
-            // 3. Slot Finding & Ticket Generation (Static Counter Verification)
-            System.out.println("\n[2] Parking Vehicles & Generating Tickets (Static Counter):");
+            System.out.println("\n[1] Fee Summary for Exit Processing:");
+            System.out.printf(" - %s Fee: Rs. %.2f%n", car, carFee);
+            System.out.printf(" - %s Fee: Rs. %.2f%n", truck, truckFee);
 
-            ParkingSlot carSlot1 = floor1.findFreeSlot(car1);
-            carSlot1.assignVehicle(car1);
-            Ticket t1 = new Ticket(car1, carSlot1);
-            System.out.println(" - Issued: " + t1);
+            // 1. Cash Payment Strategy - Exact & Change Calculation
+            System.out.println("\n[2] Successful Cash Payment Verification:");
+            CashPayment cashSuccess = new CashPayment(200.0);
+            System.out.println(" - Before Processing: " + cashSuccess);
+            cashSuccess.pay(carFee);
+            System.out.println(" - After Processing:  " + cashSuccess);
+            System.out.printf(" - Change to return to driver: Rs. %.2f (Expected: Rs. 80.00)%n",
+                    cashSuccess.getChangeGiven());
 
-            ParkingSlot carSlot2 = floor1.findFreeSlot(car2);
-            carSlot2.assignVehicle(car2);
-            Ticket t2 = new Ticket(car2, carSlot2);
-            System.out.println(" - Issued: " + t2);
-
-            ParkingSlot bikeSlot1 = floor1.findFreeSlot(bike1);
-            bikeSlot1.assignVehicle(bike1);
-            Ticket t3 = new Ticket(bike1, bikeSlot1);
-            System.out.println(" - Issued: " + t3);
-
-            ParkingSlot truckSlot1 = floor1.findFreeSlot(truck1);
-            truckSlot1.assignVehicle(truck1);
-            Ticket t4 = new Ticket(truck1, truckSlot1);
-            System.out.println(" - Issued: " + t4);
-
-            System.out.println("\n[3] Post-Parking Floor Status:");
-            System.out.println(" - " + floor1);
-            System.out.println(" - Free Car Slots remaining: " + floor1.getFreeCount("Car"));
-            System.out.println(" - Free Bike Slots remaining: " + floor1.getFreeCount("Bike"));
-            System.out.println(" - Free Truck Slots remaining: " + floor1.getFreeCount("Truck"));
-
-            // 4. Duration Calculation Math Verification
-            System.out.println("\n[4] Ticket Duration Math Verification:");
-            long entry = t1.getEntryTimeMillis();
-
-            // Scenario A: Parked for 15 minutes (900,000 ms) -> rounds up to 1 hour (minimum rule)
-            long exit15Min = entry + (15 * 60 * 1000L);
-            int hours15Min = t1.calculateHoursParked(exit15Min);
-            System.out.println(" - 15 minutes parked -> Billed: " + hours15Min + " hr (Expected: 1 hr)");
-
-            // Scenario B: Parked for 65 minutes (3,900,000 ms) -> rounds up to 2 hours (ceiling rule)
-            long exit65Min = entry + (65 * 60 * 1000L);
-            int hours65Min = t1.calculateHoursParked(exit65Min);
-            System.out.println(" - 65 minutes parked -> Billed: " + hours65Min + " hrs (Expected: 2 hrs)");
-
-            // Scenario C: Parked for 180 minutes -> exactly 3 hours
-            long exit3Hrs = entry + (3 * 3600 * 1000L);
-            int hours3Hrs = t1.calculateHoursParked(exit3Hrs);
-            System.out.println(" - 180 minutes parked -> Billed: " + hours3Hrs + " hrs (Expected: 3 hrs)");
-
-            // 5. Incompatible Slot Parking Check
-            System.out.println("\n[5] Slot Guard Check (Incompatible Vehicle Type):");
+            // 2. Cash Payment Strategy - Insufficient Tender Guard
+            System.out.println("\n[3] Insufficient Cash Guard Verification:");
             try {
-                System.out.print(" - Attempting to park Truck into Bike slot... ");
-                bikeSlot1.vacate(); // temporarily vacate bike slot
-                bikeSlot1.assignVehicle(truck1); // Truck should NOT fit in Bike slot!
-            } catch (InvalidVehicleException e) {
+                System.out.print(" - Attempting to settle Rs. 120.00 fee with Rs. 100.00 cash... ");
+                CashPayment cashShort = new CashPayment(100.0);
+                cashShort.pay(carFee);
+            } catch (PaymentFailedException e) {
                 System.out.println("CAUGHT EXPECTED EXCEPTION: " + e.getMessage());
-                bikeSlot1.assignVehicle(bike1); // restore
             }
 
-            // 6. Slot Vacating Verification
-            System.out.println("\n[6] Slot Vacating Verification:");
-            System.out.println(" - Slot before vacating: " + carSlot1);
-            Vehicle departed = carSlot1.vacate();
-            System.out.println(" - Vehicle departed: " + departed.getPlateNumber());
-            System.out.println(" - Slot after vacating: " + carSlot1);
-            System.out.println(" - Is slot available now? " + carSlot1.isAvailable());
+            // 3. UPI Payment Strategy - Successful Digital Settlement
+            System.out.println("\n[4] Successful UPI Payment Verification:");
+            UPIPayment upiSuccess = new UPIPayment("rohan@okhdfcbank");
+            System.out.println(" - Before Processing: " + upiSuccess);
+            upiSuccess.pay(truckFee);
+            System.out.println(" - After Processing:  " + upiSuccess);
+            System.out.println(" - Generated Txn Reference: " + upiSuccess.getTransactionRef());
 
-            System.out.println("\n[SUCCESS] Phase 3 complete: Slot, Floor, and Ticket verified successfully.");
+            // 4. UPI Payment Strategy - Invalid VPA Guard
+            System.out.println("\n[5] Invalid UPI ID Guard Verification:");
+            try {
+                System.out.print(" - Attempting to use UPI ID without '@' sign ('invalidVpaHandle')... ");
+                new UPIPayment("invalidVpaHandle");
+            } catch (PaymentFailedException e) {
+                System.out.println("CAUGHT EXPECTED EXCEPTION: " + e.getMessage());
+            }
+
+            try {
+                System.out.print(" - Attempting to use UPI ID with missing provider ('rohan@')... ");
+                new UPIPayment("rohan@");
+            } catch (PaymentFailedException e) {
+                System.out.println("CAUGHT EXPECTED EXCEPTION: " + e.getMessage());
+            }
+
+            // 5. Polymorphic Strategy Dispatch (Interface Substitution)
+            System.out.println("\n[6] Dynamic Strategy Dispatch (Interface Realization):");
+            Payment[] paymentMethods = new Payment[] {
+                    new CashPayment(150.0),
+                    new UPIPayment("priya@icici")
+            };
+
+            double feeToSettle = 100.0;
+            for (Payment method : paymentMethods) {
+                // The caller interacts ONLY with the Payment interface contract
+                System.out.printf(" - Executing payment via %-4s channel: ", method.getMode());
+                method.pay(feeToSettle);
+                System.out.println("SUCCESS -> " + method);
+            }
+
+            System.out.println("\n[SUCCESS] Phase 4 complete: Payment strategy subsystem verified successfully.");
 
         } catch (Exception e) {
             System.err.println("[ERROR] Unexpected exception occurred: " + e.getMessage());
