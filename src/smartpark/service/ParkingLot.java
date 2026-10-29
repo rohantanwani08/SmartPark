@@ -96,7 +96,7 @@ public class ParkingLot {
 
     /**
      * Admits a vehicle into the parking facility.
-     * Enforces duplicate license plate detection and multi-floor slot search.
+     * Thread-safe synchronized critical section locking on the ParkingLot instance monitor.
      *
      * @param vehicle incoming vehicle
      * @return issued admission ticket
@@ -104,7 +104,7 @@ public class ParkingLot {
      * @throws LotFullException          if no compatible free slot exists across all floors
      * @throws InvalidVehicleException  if vehicle is null or slot assignment fails
      */
-    public Ticket parkVehicle(Vehicle vehicle)
+    public synchronized Ticket parkVehicle(Vehicle vehicle)
             throws DuplicateVehicleException, LotFullException, InvalidVehicleException {
         if (vehicle == null) {
             throw new InvalidVehicleException("Cannot admit a null vehicle.");
@@ -152,6 +152,96 @@ public class ParkingLot {
     }
 
     /**
+     * Admits a vehicle, waiting if the parking facility is currently full.
+     * Demonstrates wait() and inter-thread synchronization with while-loop guard against spurious wakeups.
+     *
+     * @param vehicle incoming vehicle
+     * @return issued admission ticket
+     * @throws InterruptedException      if waiting thread is interrupted
+     * @throws DuplicateVehicleException if license plate is duplicate
+     * @throws InvalidVehicleException  if vehicle is null
+     */
+    public synchronized Ticket parkVehicleWait(Vehicle vehicle)
+            throws InterruptedException, DuplicateVehicleException, InvalidVehicleException {
+        if (vehicle == null) {
+            throw new InvalidVehicleException("Cannot admit a null vehicle.");
+        }
+
+        // Guard against duplicate license plates
+        for (Ticket activeTicket : activeTickets) {
+            if (activeTicket.getVehicle().getPlateNumber().equalsIgnoreCase(vehicle.getPlateNumber())) {
+                throw new DuplicateVehicleException(String.format(
+                        "Vehicle with license plate '%s' is already parked under Ticket #%d (Slot: %s).",
+                        vehicle.getPlateNumber(), activeTicket.getTicketId(),
+                        activeTicket.getParkingSlot().getSlotId()));
+            }
+        }
+
+        // While loop guard: Re-checks condition after every wakeup to defend against
+        // spurious wakeups and contending threads racing for the same newly-freed slot!
+        while (isLotFullFor(vehicle.getVehicleType())) {
+            wait();
+        }
+
+        try {
+            return parkVehicle(vehicle);
+        } catch (LotFullException e) {
+            // In the rare event another contending thread grabbed the slot, loop back
+            return parkVehicleWait(vehicle);
+        }
+    }
+
+    /**
+     * Checks if all slots of a particular vehicle type are completely occupied across all floors.
+     *
+     * @param vehicleType type to inspect (e.g. "Car", "Bike", "Truck")
+     * @return true if no compatible slots are free
+     */
+    public synchronized boolean isLotFullFor(String vehicleType) {
+        for (Floor floor : floors) {
+            if (floor.getFreeCount(vehicleType) > 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Deliberately un-synchronized slot allocation designed to demonstrate a Race Condition.
+     * Introduces an artificial 50ms scheduling delay between checking slot availability and assigning it.
+     *
+     * @param vehicle incoming vehicle
+     * @return assigned ticket
+     * @throws Exception if race condition leads to invalid state
+     */
+    public Ticket parkVehicleUnsafe(Vehicle vehicle) throws Exception {
+        if (vehicle == null) {
+            throw new InvalidVehicleException("Cannot admit a null vehicle.");
+        }
+
+        ParkingSlot freeSlot = null;
+        for (Floor floor : floors) {
+            freeSlot = floor.findFreeSlot(vehicle);
+            if (freeSlot != null) {
+                break;
+            }
+        }
+
+        if (freeSlot == null) {
+            throw new LotFullException("Parking lot is full for type: " + vehicle.getVehicleType());
+        }
+
+        // DELIBERATE RACE WINDOW: Sleep causes multiple concurrent threads to observe
+        // the EXACT SAME free slot before any of them has marked it as occupied!
+        Thread.sleep(50);
+
+        freeSlot.assignVehicle(vehicle);
+        Ticket ticket = new Ticket(vehicle, freeSlot);
+        activeTickets.add(ticket);
+        return ticket;
+    }
+
+    /**
      * Processes vehicle exit with current system time.
      */
     public Ticket exitVehicle(int ticketId, Payment paymentMethod)
@@ -160,14 +250,9 @@ public class ParkingLot {
     }
 
     /**
-     * Processes vehicle departure with transactional integrity.
-     *
-     * TRANSACTIONAL ORDER:
-     * 1. Validate active ticket existence.
-     * 2. Compute billable hours and polymorphic fee.
-     * 3. Settle payment via the chosen Strategy (paymentMethod.pay(fee)) FIRST.
-     * 4. Only upon successful payment: close ticket, vacate slot, archive to history, and add revenue.
-     *    If payment fails, slot and ticket remain untouched!
+     * Processes vehicle departure with transactional integrity and thread safety.
+     * Synchronized on the ParkingLot monitor. Upon departure, executes notifyAll()
+     * to wake up waiting entry gates.
      *
      * @param ticketId           unique ticket identifier
      * @param paymentMethod      chosen payment strategy (Cash, UPI, etc.)
@@ -177,7 +262,7 @@ public class ParkingLot {
      * @throws PaymentFailedException  if payment validation or settlement fails
      * @throws InvalidVehicleException if arguments are invalid
      */
-    public Ticket exitVehicle(int ticketId, Payment paymentMethod, long exitTimeMillis)
+    public synchronized Ticket exitVehicle(int ticketId, Payment paymentMethod, long exitTimeMillis)
             throws TicketNotFoundException, PaymentFailedException, InvalidVehicleException {
         if (paymentMethod == null) {
             throw new PaymentFailedException("Payment method cannot be null.");
@@ -194,7 +279,6 @@ public class ParkingLot {
         double fee = ticket.getVehicle().calculateFee(hours);
 
         // 3. TRANSACTIONAL CHECKPOINT: Collect payment BEFORE mutating system state!
-        // If payment fails, an exception is thrown immediately and the lot remains intact.
         paymentMethod.pay(fee);
 
         // 4. State mutation: only executed if payment succeeded without throwing an exception
@@ -213,6 +297,9 @@ public class ParkingLot {
                 System.err.println("[WARN] Failed to record transaction in persistence ledger: " + e.getMessage());
             }
         }
+
+        // INTER-THREAD COORDINATION: Wake up any Gate threads waiting in wait() for a free spot!
+        notifyAll();
 
         return ticket;
     }
