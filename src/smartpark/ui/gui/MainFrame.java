@@ -12,9 +12,9 @@ import smartpark.model.ParkingSlot;
 import smartpark.model.Ticket;
 import smartpark.model.Truck;
 import smartpark.model.Vehicle;
+import smartpark.service.AnalyticsService;
 import smartpark.service.CashPayment;
 import smartpark.service.FileManager;
-import smartpark.service.OverstayWatcher;
 import smartpark.service.ParkingLot;
 import smartpark.service.Payment;
 import smartpark.service.UPIPayment;
@@ -29,23 +29,30 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
-import javax.swing.UIManager;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
+import java.awt.RenderingHints;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -53,305 +60,368 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Modern Swing Graphical User Interface (GUI) Dashboard for SmartPark.
- * Demonstrates:
- * 1. Strict Separation of Concerns (Presentation Layer decoupled from business logic).
- * 2. Visual slot grid with real-time status color coding (Green=Free, Red=Occupied, Orange=Overstay).
- * 3. Thread-safe GUI updates using SwingUtilities.invokeLater() on the Event Dispatch Thread (EDT).
- * 4. Interactive admission and checkout dialogs with strategy payment collection.
+ * Modern High-Fidelity Desktop Dashboard for SmartPark.
+ * Features:
+ * 1. Custom-painted high-contrast Slot Cards (eliminates Windows L&F color wash bugs).
+ * 2. Executive Dark Slate Header with real-time KPI metric badges and live clock.
+ * 3. Modern JTabbedPane with custom zebra-striped tables and executive analytics cards.
+ * 4. Thread-safe GUI mutations dispatched strictly via SwingUtilities.invokeLater() on EDT.
  */
 public class MainFrame extends JFrame {
     private final ParkingLot parkingLot;
-    private final Map<String, JButton> slotButtons;
+    private final Map<String, SlotCard> slotCards;
 
-    // UI Header Stat Labels
+    // UI Header Stat Badges
     private JLabel clockLabel;
-    private JLabel totalSlotsLabel;
-    private JLabel occupiedSlotsLabel;
-    private JLabel freeSlotsLabel;
-    private JLabel revenueLabel;
+    private KPICard totalSlotsCard;
+    private KPICard occupiedSlotsCard;
+    private KPICard availableSlotsCard;
+    private KPICard revenueCard;
 
-    // Tabs & Tables
+    // Tabs & Containers
     private JTabbedPane tabbedPane;
+    private JPanel gridContainer;
     private DefaultTableModel activeTableModel;
     private DefaultTableModel historyTableModel;
-    private JPanel gridContainer;
-    private javax.swing.JTextArea analyticsReportArea;
 
-    // Colors
-    private static final Color COLOR_FREE = new Color(46, 125, 50);       // Forest Green
-    private static final Color COLOR_OCCUPIED = new Color(198, 40, 40);   // Crimson Red
-    private static final Color COLOR_OVERSTAY = new Color(239, 108, 0);   // Warning Orange
-    private static final Color COLOR_HEADER = new Color(33, 33, 33);      // Dark Charcoal
-    private static final Color COLOR_ACCENT = new Color(25, 118, 210);    // Material Blue
+    // Analytics Components
+    private JProgressBar occupancyProgressBar;
+    private JLabel occupancyPctLabel;
+    private JLabel carMixLabel;
+    private JLabel bikeMixLabel;
+    private JLabel truckMixLabel;
+    private JLabel avgTicketLabel;
+    private JTextArea analyticsReportArea;
+
+    // Executive Color Palette
+    private static final Color THEME_HEADER_BG = new Color(15, 23, 42);      // Slate 900
+    private static final Color THEME_PAGE_BG = new Color(241, 245, 249);     // Slate 100
+    private static final Color THEME_CARD_BG = Color.WHITE;
+    private static final Color THEME_PRIMARY = new Color(37, 99, 235);       // Royal Blue 600
+    private static final Color THEME_SUCCESS = new Color(22, 163, 74);       // Emerald Green 600
+    private static final Color THEME_DANGER = new Color(220, 38, 38);        // Crimson Red 600
+    private static final Color THEME_TEXT_DARK = new Color(15, 23, 42);
+    private static final Color THEME_TEXT_MUTED = new Color(100, 116, 139);
 
     public MainFrame(ParkingLot parkingLot) {
         this.parkingLot = parkingLot;
-        this.slotButtons = new HashMap<>();
+        this.slotCards = new HashMap<>();
 
-        // Configure system look and feel
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {}
-
-        setTitle("SmartPark Dashboard - " + parkingLot.getLotName());
-        setSize(1100, 750);
-        setMinimumSize(new Dimension(950, 650));
+        setTitle("SmartPark Enterprise - " + parkingLot.getLotName());
+        setSize(1180, 800);
+        setMinimumSize(new Dimension(1020, 680));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
         initComponents();
         refreshDashboard();
-        startClockAndWatcher();
+        startClock();
     }
 
     private void initComponents() {
-        // 1. TOP HEADER & METRICS BAR
+        // 1. TOP EXECUTIVE HEADER
         add(createHeaderPanel(), BorderLayout.NORTH);
 
-        // 2. CENTER TABBED PANE (Visual Grid + Active Table + Audit History)
+        // 2. CENTER TABBED CONTENT AREA
         tabbedPane = new JTabbedPane();
         tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        tabbedPane.setBackground(Color.WHITE);
 
-        // Tab 1: Interactive Slot Grid
+        // Tab 1: Visual Parking Slot Grid
         gridContainer = new JPanel();
         gridContainer.setLayout(new BoxLayout(gridContainer, BoxLayout.Y_AXIS));
-        gridContainer.setBackground(new Color(245, 245, 245));
+        gridContainer.setBackground(THEME_PAGE_BG);
+        gridContainer.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
         JScrollPane gridScrollPane = new JScrollPane(gridContainer);
+        gridScrollPane.setBorder(null);
         gridScrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        tabbedPane.addTab("🅿️ Visual Parking Grid", gridScrollPane);
+        tabbedPane.addTab("Visual Parking Grid", gridScrollPane);
 
-        // Tab 2: Active Vehicles Table
-        tabbedPane.addTab("📋 Active Tickets", createActiveTablePanel());
+        // Tab 2: Active Vehicles
+        tabbedPane.addTab("Active Tickets Registry", createActiveTablePanel());
 
-        // Tab 3: Historical Audit Ledger
-        tabbedPane.addTab("📜 Financial Audit Trail", createHistoryTablePanel());
+        // Tab 3: Historical Audit Trail
+        tabbedPane.addTab("Financial Audit Ledger", createHistoryTablePanel());
 
-        // Tab 4: Executive Business Analytics & Insights
-        tabbedPane.addTab("📊 Analytics & Insights", createAnalyticsPanel());
+        // Tab 4: Executive Analytics & Insights
+        tabbedPane.addTab("Executive Analytics", createAnalyticsPanel());
 
         add(tabbedPane, BorderLayout.CENTER);
 
-        // 3. BOTTOM CONTROL ACTION BAR
+        // 3. BOTTOM HIGH-CONTRAST ACTION BAR
         add(createActionBar(), BorderLayout.SOUTH);
     }
 
+    // =========================================================================
+    // Header & KPI Stat Cards
+    // =========================================================================
+
     private JPanel createHeaderPanel() {
-        JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.setBackground(COLOR_HEADER);
-        headerPanel.setBorder(BorderFactory.createEmptyBorder(12, 16, 12, 16));
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(THEME_HEADER_BG);
+        header.setBorder(BorderFactory.createEmptyBorder(14, 20, 14, 20));
 
-        // Title and live clock
-        JPanel titlePanel = new JPanel(new BorderLayout());
-        titlePanel.setOpaque(false);
+        // Brand Title & Live Clock
+        JPanel titleBox = new JPanel();
+        titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
+        titleBox.setOpaque(false);
 
-        JLabel titleLabel = new JLabel("🚗 SmartPark Management Facility");
-        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
-        titleLabel.setForeground(Color.WHITE);
+        JLabel brandLabel = new JLabel("SMARTPARK  |  FACILITY OPERATIONS DASHBOARD");
+        brandLabel.setFont(new Font("Segoe UI", Font.BOLD, 17));
+        brandLabel.setForeground(Color.WHITE);
 
-        clockLabel = new JLabel();
-        clockLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        clockLabel.setForeground(new Color(200, 200, 200));
+        clockLabel = new JLabel("Synchronizing clock...");
+        clockLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        clockLabel.setForeground(new Color(148, 163, 184)); // Slate 400
 
-        titlePanel.add(titleLabel, BorderLayout.NORTH);
-        titlePanel.add(clockLabel, BorderLayout.SOUTH);
-        headerPanel.add(titlePanel, BorderLayout.WEST);
+        titleBox.add(brandLabel);
+        titleBox.add(Box.createVerticalStrut(4));
+        titleBox.add(clockLabel);
+        header.add(titleBox, BorderLayout.WEST);
 
-        // Key Metric KPI Badges
-        JPanel metricsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
-        metricsPanel.setOpaque(false);
+        // Top KPI Metric Cards
+        JPanel kpiBox = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        kpiBox.setOpaque(false);
 
-        totalSlotsLabel = createMetricBadge("TOTAL SLOTS", "0", new Color(66, 66, 66));
-        occupiedSlotsLabel = createMetricBadge("OCCUPIED", "0", COLOR_OCCUPIED);
-        freeSlotsLabel = createMetricBadge("AVAILABLE", "0", COLOR_FREE);
-        revenueLabel = createMetricBadge("TOTAL REVENUE", "Rs. 0.00", COLOR_ACCENT);
+        totalSlotsCard = new KPICard("TOTAL SLOTS", "0", new Color(51, 65, 85), Color.WHITE);
+        occupiedSlotsCard = new KPICard("OCCUPIED", "0", new Color(153, 27, 27), new Color(254, 202, 202));
+        availableSlotsCard = new KPICard("AVAILABLE", "0", new Color(20, 83, 45), new Color(187, 247, 208));
+        revenueCard = new KPICard("TOTAL REVENUE", "Rs. 0.00", new Color(30, 58, 138), new Color(191, 219, 254));
 
-        metricsPanel.add(totalSlotsLabel);
-        metricsPanel.add(occupiedSlotsLabel);
-        metricsPanel.add(freeSlotsLabel);
-        metricsPanel.add(revenueLabel);
+        kpiBox.add(totalSlotsCard);
+        kpiBox.add(occupiedSlotsCard);
+        kpiBox.add(availableSlotsCard);
+        kpiBox.add(revenueCard);
+        header.add(kpiBox, BorderLayout.EAST);
 
-        headerPanel.add(metricsPanel, BorderLayout.EAST);
-        return headerPanel;
+        return header;
     }
 
-    private JLabel createMetricBadge(String title, String value, Color bgColor) {
-        JLabel badge = new JLabel(String.format("<html><center><small>%s</small><br><b>%s</b></center></html>", title, value));
-        badge.setOpaque(true);
-        badge.setBackground(bgColor);
-        badge.setForeground(Color.WHITE);
-        badge.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        badge.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
-        return badge;
-    }
+    // =========================================================================
+    // Tables: Active & Audit History (Zebra Striped, Clean High Contrast)
+    // =========================================================================
 
     private JPanel createActiveTablePanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        panel.setBackground(THEME_PAGE_BG);
+        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
-        String[] columns = { "Ticket #", "License Plate", "Type", "Assigned Slot", "Owner Name", "Entry Time" };
-        activeTableModel = new DefaultTableModel(columns, 0) {
+        String[] cols = { "Ticket ID", "License Plate", "Category", "Assigned Slot", "Owner Name", "Entry Timestamp" };
+        activeTableModel = new DefaultTableModel(cols, 0) {
             @Override
             public boolean isCellEditable(int row, int col) { return false; }
         };
 
-        JTable table = new JTable(activeTableModel);
-        table.setRowHeight(28);
-        table.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-
-        DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
-        centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
-        table.getColumnModel().getColumn(0).setCellRenderer(centerRenderer);
-        table.getColumnModel().getColumn(2).setCellRenderer(centerRenderer);
-        table.getColumnModel().getColumn(3).setCellRenderer(centerRenderer);
-
+        JTable table = createStyledTable(activeTableModel);
         panel.add(new JScrollPane(table), BorderLayout.CENTER);
         return panel;
     }
 
     private JPanel createHistoryTablePanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        panel.setBackground(THEME_PAGE_BG);
+        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
-        String[] columns = { "Ticket #", "License Plate", "Type", "Fee Paid", "Channel", "Departure Time" };
-        historyTableModel = new DefaultTableModel(columns, 0) {
+        String[] cols = { "Ticket ID", "License Plate", "Category", "Fee Settled", "Channel", "Departure Timestamp" };
+        historyTableModel = new DefaultTableModel(cols, 0) {
             @Override
             public boolean isCellEditable(int row, int col) { return false; }
         };
 
-        JTable table = new JTable(historyTableModel);
-        table.setRowHeight(28);
-        table.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-
+        JTable table = createStyledTable(historyTableModel);
         panel.add(new JScrollPane(table), BorderLayout.CENTER);
         return panel;
     }
 
-    private JPanel createAnalyticsPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-        panel.setBackground(Color.WHITE);
+    private JTable createStyledTable(DefaultTableModel model) {
+        JTable table = new JTable(model);
+        table.setRowHeight(32);
+        table.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
+        table.getTableHeader().setBackground(THEME_HEADER_BG);
+        table.getTableHeader().setForeground(Color.WHITE);
+        table.getTableHeader().setPreferredSize(new Dimension(0, 36));
+        table.setGridColor(new Color(226, 232, 240));
 
-        analyticsReportArea = new javax.swing.JTextArea();
+        // Custom Zebra Striping Renderer
+        table.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable t, Object val, boolean isSel, boolean hasFocus, int row, int col) {
+                Component c = super.getTableCellRendererComponent(t, val, isSel, hasFocus, row, col);
+                if (!isSel) {
+                    c.setBackground(row % 2 == 0 ? Color.WHITE : new Color(248, 250, 252));
+                    c.setForeground(THEME_TEXT_DARK);
+                } else {
+                    c.setBackground(new Color(219, 234, 254));
+                    c.setForeground(THEME_PRIMARY);
+                }
+                if (col == 0 || col == 2 || col == 3 || col == 4) {
+                    setHorizontalAlignment(SwingConstants.CENTER);
+                } else {
+                    setHorizontalAlignment(SwingConstants.LEFT);
+                }
+                return c;
+            }
+        });
+        return table;
+    }
+
+    // =========================================================================
+    // Tab 4: Executive Analytics Panel
+    // =========================================================================
+
+    private JPanel createAnalyticsPanel() {
+        JPanel panel = new JPanel(new BorderLayout(15, 15));
+        panel.setBackground(THEME_PAGE_BG);
+        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+
+        // Top KPI Gauge Strip
+        JPanel topStrip = new JPanel(new GridLayout(1, 3, 15, 0));
+        topStrip.setOpaque(false);
+
+        // Utilization Card
+        JPanel utilCard = createAnalyticsCard("FACILITY UTILIZATION");
+        occupancyProgressBar = new JProgressBar(0, 100);
+        occupancyProgressBar.setStringPainted(true);
+        occupancyProgressBar.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        occupancyProgressBar.setForeground(THEME_PRIMARY);
+        occupancyProgressBar.setPreferredSize(new Dimension(200, 26));
+
+        occupancyPctLabel = new JLabel("0.0% Occupied");
+        occupancyPctLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        occupancyPctLabel.setForeground(THEME_PRIMARY);
+
+        utilCard.add(occupancyPctLabel, BorderLayout.CENTER);
+        utilCard.add(occupancyProgressBar, BorderLayout.SOUTH);
+        topStrip.add(utilCard);
+
+        // Vehicle Mix Card
+        JPanel mixCard = createAnalyticsCard("ACTIVE VEHICLE DISTRIBUTION");
+        JPanel mixLabels = new JPanel(new GridLayout(3, 1, 4, 4));
+        mixLabels.setOpaque(false);
+        carMixLabel = new JLabel("● Cars : 0 (0%)");
+        bikeMixLabel = new JLabel("● Bikes: 0 (0%)");
+        truckMixLabel = new JLabel("● Trucks: 0 (0%)");
+        carMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        bikeMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        truckMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        mixLabels.add(carMixLabel);
+        mixLabels.add(bikeMixLabel);
+        mixLabels.add(truckMixLabel);
+        mixCard.add(mixLabels, BorderLayout.CENTER);
+        topStrip.add(mixCard);
+
+        // Revenue Card
+        JPanel revCard = createAnalyticsCard("HISTORICAL TICKET AVERAGE");
+        avgTicketLabel = new JLabel("Rs. 0.00 / session");
+        avgTicketLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        avgTicketLabel.setForeground(THEME_SUCCESS);
+        revCard.add(avgTicketLabel, BorderLayout.CENTER);
+        topStrip.add(revCard);
+
+        panel.add(topStrip, BorderLayout.NORTH);
+
+        // Center Executive Report
+        analyticsReportArea = new JTextArea();
         analyticsReportArea.setEditable(false);
         analyticsReportArea.setFont(new Font("Consolas", Font.PLAIN, 13));
-        analyticsReportArea.setBackground(new Color(248, 249, 250));
-        analyticsReportArea.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        analyticsReportArea.setBackground(Color.WHITE);
+        analyticsReportArea.setForeground(THEME_TEXT_DARK);
+        analyticsReportArea.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
-        JScrollPane scrollPane = new JScrollPane(analyticsReportArea);
-        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(220, 224, 230), 1));
+        JScrollPane scroll = new JScrollPane(analyticsReportArea);
+        scroll.setBorder(BorderFactory.createLineBorder(new Color(203, 213, 225), 1));
+        panel.add(scroll, BorderLayout.CENTER);
 
-        JPanel topBar = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        topBar.setBackground(Color.WHITE);
-        JButton refreshAnalyticsBtn = createStyledButton("🔄 Refresh Analytics", COLOR_ACCENT);
-        refreshAnalyticsBtn.addActionListener(e -> refreshDashboard());
-        topBar.add(refreshAnalyticsBtn);
-
-        panel.add(topBar, BorderLayout.NORTH);
-        panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
 
+    private JPanel createAnalyticsCard(String title) {
+        JPanel card = new JPanel(new BorderLayout(5, 5));
+        card.setBackground(Color.WHITE);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
+                BorderFactory.createEmptyBorder(12, 14, 12, 14)));
+
+        JLabel titleLbl = new JLabel(title);
+        titleLbl.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        titleLbl.setForeground(THEME_TEXT_MUTED);
+        card.add(titleLbl, BorderLayout.NORTH);
+        return card;
+    }
+
+    // =========================================================================
+    // Bottom Action Bar (High-Contrast, Custom-Painted Buttons)
+    // =========================================================================
+
     private JPanel createActionBar() {
-        JPanel bar = new JPanel(new FlowLayout(FlowLayout.CENTER, 16, 12));
-        bar.setBackground(new Color(238, 238, 238));
-        bar.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(200, 200, 200)));
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.CENTER, 18, 12));
+        bar.setBackground(Color.WHITE);
+        bar.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(226, 232, 240)));
 
-        JButton parkBtn = createStyledButton("➕ Admit Vehicle", COLOR_FREE);
-        parkBtn.addActionListener(e -> showAdmissionDialog());
+        ModernButton admitBtn = new ModernButton("+ Admit Vehicle", THEME_SUCCESS, new Color(34, 197, 94));
+        admitBtn.addActionListener(e -> showAdmissionDialog());
 
-        JButton exitBtn = createStyledButton("💳 Process Exit & Payment", COLOR_ACCENT);
+        ModernButton exitBtn = new ModernButton("Exit & Settle Payment", THEME_PRIMARY, new Color(59, 130, 246));
         exitBtn.addActionListener(e -> showExitDialog());
 
-        JButton refreshBtn = createStyledButton("🔄 Refresh View", new Color(66, 66, 66));
+        ModernButton refreshBtn = new ModernButton("Refresh Dashboard", new Color(71, 85, 105), new Color(100, 116, 139));
         refreshBtn.addActionListener(e -> refreshDashboard());
 
-        bar.add(parkBtn);
+        bar.add(admitBtn);
         bar.add(exitBtn);
         bar.add(refreshBtn);
         return bar;
     }
 
-    private JButton createStyledButton(String text, Color bg) {
-        JButton btn = new JButton(text);
-        btn.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        btn.setBackground(bg);
-        btn.setForeground(Color.WHITE);
-        btn.setFocusPainted(false);
-        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        btn.setBorder(BorderFactory.createEmptyBorder(8, 16, 8, 16));
-        return btn;
-    }
-
     // =========================================================================
-    // Real-Time Dashboard Rendering & Synchronization
+    // Dynamic Dashboard Refresh (Enforces Thread-Safety on EDT)
     // =========================================================================
 
     public void refreshDashboard() {
-        // Enforce execution on the Event Dispatch Thread (EDT)
         if (!SwingUtilities.isEventDispatchThread()) {
             SwingUtilities.invokeLater(this::refreshDashboard);
             return;
         }
 
-        // 1. Update KPI Badges
+        // 1. Update KPI Header Badges
         int total = parkingLot.getTotalCapacity();
         int occupied = parkingLot.getOccupiedSlotsCount();
         int free = parkingLot.getFreeSlotsCount();
         double rev = parkingLot.getTotalRevenue();
 
-        totalSlotsLabel.setText(String.format("<html><center><small>TOTAL SLOTS</small><br><b>%d</b></center></html>", total));
-        occupiedSlotsLabel.setText(String.format("<html><center><small>OCCUPIED</small><br><b>%d</b></center></html>", occupied));
-        freeSlotsLabel.setText(String.format("<html><center><small>AVAILABLE</small><br><b>%d</b></center></html>", free));
-        revenueLabel.setText(String.format("<html><center><small>TOTAL REVENUE</small><br><b>Rs. %.2f</b></center></html>", rev));
+        totalSlotsCard.setValue(String.valueOf(total));
+        occupiedSlotsCard.setValue(String.valueOf(occupied));
+        availableSlotsCard.setValue(String.valueOf(free));
+        revenueCard.setValue(String.format("Rs. %.2f", rev));
 
-        // 2. Rebuild Visual Grid
+        // 2. Re-render Visual Grid using Custom SlotCards
         gridContainer.removeAll();
-        slotButtons.clear();
+        slotCards.clear();
 
         for (Floor floor : parkingLot.getFloors()) {
-            JPanel floorPanel = new JPanel(new GridLayout(0, 4, 10, 10));
+            JPanel floorPanel = new JPanel(new GridLayout(0, 4, 12, 12));
             floorPanel.setBackground(Color.WHITE);
             floorPanel.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createTitledBorder(
-                            BorderFactory.createLineBorder(new Color(189, 189, 189), 1),
-                            String.format(" Floor %d  (Free: %d / %d) ",
+                            BorderFactory.createLineBorder(new Color(203, 213, 225), 1),
+                            String.format(" Floor %d  (Available: %d / %d) ",
                                     floor.getFloorNumber(),
                                     (floor.getTotalSlots() - floor.getOccupiedCount()),
                                     floor.getTotalSlots()),
-                            0, 0, new Font("Segoe UI", Font.BOLD, 14), COLOR_HEADER),
-                    BorderFactory.createEmptyBorder(10, 10, 10, 10)));
+                            0, 0, new Font("Segoe UI", Font.BOLD, 13), THEME_TEXT_DARK),
+                    BorderFactory.createEmptyBorder(12, 12, 12, 12)));
 
             for (ParkingSlot slot : floor.getSlots()) {
-                JButton btn = new JButton();
-                btn.setPreferredSize(new Dimension(140, 75));
-                btn.setFont(new Font("Segoe UI", Font.BOLD, 12));
-                btn.setFocusPainted(false);
-                btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
-                if (slot.isAvailable()) {
-                    btn.setBackground(COLOR_FREE);
-                    btn.setForeground(Color.WHITE);
-                    btn.setText(String.format("<html><center><b>%s</b><br><small>[%s]</small><br>AVAILABLE</center></html>",
-                            slot.getSlotId(), slot.getSupportedType()));
-                } else {
-                    Vehicle v = slot.getCurrentVehicle();
-                    btn.setBackground(COLOR_OCCUPIED);
-                    btn.setForeground(Color.WHITE);
-                    btn.setText(String.format("<html><center><b>%s</b><br><small>%s</small><br>%s</center></html>",
-                            slot.getSlotId(), v.getVehicleType(), v.getPlateNumber()));
-                }
-
-                btn.addActionListener(e -> showSlotDetails(slot));
-                slotButtons.put(slot.getSlotId(), btn);
-                floorPanel.add(btn);
+                SlotCard card = new SlotCard(slot);
+                card.addActionListener(e -> showSlotDetails(slot));
+                slotCards.put(slot.getSlotId(), card);
+                floorPanel.add(card);
             }
 
             gridContainer.add(floorPanel);
-            gridContainer.add(Box.createVerticalStrut(12));
+            gridContainer.add(Box.createVerticalStrut(14));
         }
 
         gridContainer.revalidate();
@@ -389,17 +459,31 @@ public class MainFrame extends JFrame {
             } catch (Exception ignored) {}
         }
 
-        // 5. Update Executive Analytics Report Area
-        if (analyticsReportArea != null) {
-            smartpark.service.AnalyticsService analytics = new smartpark.service.AnalyticsService(parkingLot);
-            analyticsReportArea.setText(analytics.getExecutiveSummary());
-        }
+        // 5. Update Analytics Tab
+        AnalyticsService analytics = new AnalyticsService(parkingLot);
+        double rate = analytics.getOccupancyRate();
+        occupancyProgressBar.setValue((int) rate);
+        occupancyProgressBar.setString(String.format("%.1f%%", rate));
+        occupancyPctLabel.setText(String.format("%.1f%% Occupancy", rate));
+
+        Map<String, Integer> mix = analytics.getActiveVehicleMix();
+        int activeCount = parkingLot.getActiveTickets().size();
+        double cPct = activeCount > 0 ? (mix.get("Car") * 100.0) / activeCount : 0.0;
+        double bPct = activeCount > 0 ? (mix.get("Bike") * 100.0) / activeCount : 0.0;
+        double tPct = activeCount > 0 ? (mix.get("Truck") * 100.0) / activeCount : 0.0;
+
+        carMixLabel.setText(String.format("● Cars  : %d (%.0f%%)", mix.get("Car"), cPct));
+        bikeMixLabel.setText(String.format("● Bikes : %d (%.0f%%)", mix.get("Bike"), bPct));
+        truckMixLabel.setText(String.format("● Trucks: %d (%.0f%%)", mix.get("Truck"), tPct));
+
+        avgTicketLabel.setText(String.format("Rs. %.2f avg", analytics.getAverageTransactionValue()));
+        analyticsReportArea.setText(analytics.getExecutiveSummary());
     }
 
     private void showSlotDetails(ParkingSlot slot) {
         if (slot.isAvailable()) {
             JOptionPane.showMessageDialog(this,
-                    String.format("Slot ID: %s%nDesignated For: %s%nStatus: AVAILABLE",
+                    String.format("Slot ID: %s%nDesignated For: %s%nStatus: AVAILABLE (Empty)",
                             slot.getSlotId(), slot.getSupportedType()),
                     "Slot Information", JOptionPane.INFORMATION_MESSAGE);
         } else {
@@ -416,7 +500,8 @@ public class MainFrame extends JFrame {
             String inTime = ticket != null ? sdf.format(new Date(ticket.getEntryTimeMillis())) : "N/A";
             int ticketId = ticket != null ? ticket.getTicketId() : 0;
 
-            String details = String.format("Slot ID: %s%nStatus: OCCUPIED%nTicket #: %d%nPlate Number: %s%nOwner: %s%nVehicle Type: %s%nEntry Time: %s",
+            String details = String.format(
+                    "SLOT DETAILS%n------------------------------------%nSlot Identifier: %s%nStatus         : OCCUPIED%nTicket ID       : #%d%nLicense Plate  : %s%nOwner Name     : %s%nVehicle Type   : %s%nEntry Timestamp: %s",
                     slot.getSlotId(), ticketId, v.getPlateNumber(), v.getOwnerName(), v.getVehicleType(), inTime);
 
             JOptionPane.showMessageDialog(this, details, "Slot Information", JOptionPane.INFORMATION_MESSAGE);
@@ -424,15 +509,16 @@ public class MainFrame extends JFrame {
     }
 
     // =========================================================================
-    // Dialogs: Admission & Exit Modals
+    // Dialogs: Admission & Exit (High Contrast & Clear Inputs)
     // =========================================================================
 
     private void showAdmissionDialog() {
-        JDialog dialog = new JDialog(this, "Admit Incoming Vehicle", true);
-        dialog.setSize(420, 320);
+        JDialog dialog = new JDialog(this, "Admit Vehicle to SmartPark", true);
+        dialog.setSize(440, 340);
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new GridLayout(6, 2, 10, 10));
-        ((JPanel) dialog.getContentPane()).setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        ((JPanel) dialog.getContentPane()).setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
+        dialog.getContentPane().setBackground(Color.WHITE);
 
         JComboBox<String> typeCombo = new JComboBox<>(new String[]{ "Car", "Bike", "Truck" });
         JTextField plateField = new JTextField();
@@ -451,16 +537,16 @@ public class MainFrame extends JFrame {
 
         dialog.add(new JLabel("Vehicle Category:"));
         dialog.add(typeCombo);
-        dialog.add(new JLabel("License Plate:"));
+        dialog.add(new JLabel("License Plate Number:"));
         dialog.add(plateField);
-        dialog.add(new JLabel("Owner Name:"));
+        dialog.add(new JLabel("Owner Full Name:"));
         dialog.add(ownerField);
         dialog.add(new JLabel("Fuel Type:"));
         dialog.add(fuelCombo);
-        dialog.add(new JLabel("Truck Tonnage (if Truck):"));
+        dialog.add(new JLabel("Cargo Weight (Tonnes):"));
         dialog.add(tonnageField);
 
-        JButton submitBtn = createStyledButton("Confirm Entry", COLOR_FREE);
+        ModernButton submitBtn = new ModernButton("Confirm Entry", THEME_SUCCESS, new Color(34, 197, 94));
         submitBtn.addActionListener(e -> {
             String plate = plateField.getText().trim();
             String owner = ownerField.getText().trim();
@@ -483,7 +569,7 @@ public class MainFrame extends JFrame {
                 refreshDashboard();
 
                 JOptionPane.showMessageDialog(this,
-                        String.format(">>> TICKET ISSUED <<<%nTicket ID: #%d%nVehicle: %s%nAssigned Slot: %s%nHourly Rate: Rs. %.2f/hr",
+                        String.format("ADMISSION SUCCESSFUL!%n----------------------------%nTicket ID     : #%d%nVehicle Plate : %s%nAssigned Slot : %s%nHourly Rate   : Rs. %.2f/hr",
                                 ticket.getTicketId(), vehicle.getPlateNumber(), ticket.getParkingSlot().getSlotId(),
                                 vehicle.calculateFee(1)),
                         "Admission Confirmed", JOptionPane.INFORMATION_MESSAGE);
@@ -506,20 +592,24 @@ public class MainFrame extends JFrame {
     private void showExitDialog() {
         List<Ticket> activeTickets = parkingLot.getActiveTickets();
         if (activeTickets.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "No vehicles are currently parked in the lot.", "Lot Empty", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "No vehicles are currently parked in the lot.", "Facility Empty", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
 
         JDialog dialog = new JDialog(this, "Process Vehicle Exit & Payment", true);
-        dialog.setSize(440, 320);
+        dialog.setSize(460, 340);
         dialog.setLocationRelativeTo(this);
         dialog.setLayout(new GridLayout(6, 2, 10, 10));
-        ((JPanel) dialog.getContentPane()).setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        ((JPanel) dialog.getContentPane()).setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
+        dialog.getContentPane().setBackground(Color.WHITE);
 
         Integer[] ticketIds = activeTickets.stream().map(Ticket::getTicketId).toArray(Integer[]::new);
         JComboBox<Integer> ticketCombo = new JComboBox<>(ticketIds);
 
         JLabel feePreviewLabel = new JLabel("Calculating...");
+        feePreviewLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        feePreviewLabel.setForeground(THEME_PRIMARY);
+
         JComboBox<String> paymentChannelCombo = new JComboBox<>(new String[]{ "Cash", "UPI" });
         JLabel promptLabel = new JLabel("Cash Tendered (Rs):");
         JTextField paymentInputField = new JTextField();
@@ -549,16 +639,16 @@ public class MainFrame extends JFrame {
 
         updateFeePreview.run();
 
-        dialog.add(new JLabel("Select Ticket #:"));
+        dialog.add(new JLabel("Select Ticket ID:"));
         dialog.add(ticketCombo);
-        dialog.add(new JLabel("Calculated Fee:"));
+        dialog.add(new JLabel("Calculated Parking Fee:"));
         dialog.add(feePreviewLabel);
-        dialog.add(new JLabel("Payment Method:"));
+        dialog.add(new JLabel("Payment Channel:"));
         dialog.add(paymentChannelCombo);
         dialog.add(promptLabel);
         dialog.add(paymentInputField);
 
-        JButton checkoutBtn = createStyledButton("Confirm Payment & Exit", COLOR_ACCENT);
+        ModernButton checkoutBtn = new ModernButton("Settle & Release Slot", THEME_PRIMARY, new Color(59, 130, 246));
         checkoutBtn.addActionListener(e -> {
             Integer ticketId = (Integer) ticketCombo.getSelectedItem();
             if (ticketId == null) return;
@@ -579,14 +669,14 @@ public class MainFrame extends JFrame {
                 dialog.dispose();
                 refreshDashboard();
 
-                String receipt = String.format(">>> PAYMENT RECEIPT <<<%nTicket ID: #%d%nVehicle: %s%nPayment Channel: %s%nSlot Freed: %s",
+                String receipt = String.format("DEPARTURE RECEIPT%n----------------------------------%nTicket ID     : #%d%nVehicle Plate : %s%nPayment Mode  : %s%nSlot Freed    : %s",
                         closedTicket.getTicketId(), closedTicket.getVehicle().getPlateNumber(), payment.getMode(),
                         closedTicket.getParkingSlot().getSlotId());
 
                 if (payment instanceof CashPayment) {
                     receipt += String.format("%nChange Returned: Rs. %.2f", ((CashPayment) payment).getChangeGiven());
                 } else if (payment instanceof UPIPayment) {
-                    receipt += String.format("%nTransaction Ref: %s", ((UPIPayment) payment).getTransactionRef());
+                    receipt += String.format("%nTxn Reference  : %s", ((UPIPayment) payment).getTransactionRef());
                 }
 
                 JOptionPane.showMessageDialog(this, receipt, "Exit Succeeded", JOptionPane.INFORMATION_MESSAGE);
@@ -608,12 +698,214 @@ public class MainFrame extends JFrame {
         dialog.setVisible(true);
     }
 
-    private void startClockAndWatcher() {
-        // Digital clock timer updating every second on EDT
-        Timer clockTimer = new Timer(1000, e -> {
+    private void startClock() {
+        Timer timer = new Timer(1000, e -> {
             SimpleDateFormat sdf = new SimpleDateFormat("EEEE, dd MMM yyyy - HH:mm:ss");
-            clockLabel.setText("🕒 " + sdf.format(new Date()));
+            clockLabel.setText(sdf.format(new Date()));
         });
-        clockTimer.start();
+        timer.start();
+    }
+
+    // =========================================================================
+    // Custom UI Components (High Contrast, Crisp Painting)
+    // =========================================================================
+
+    /**
+     * Top Header KPI Card Component.
+     */
+    private static class KPICard extends JPanel {
+        private final JLabel valueLabel;
+
+        public KPICard(String title, String initialValue, Color bg, Color textColor) {
+            setLayout(new BorderLayout());
+            setBackground(bg);
+            setBorder(BorderFactory.createEmptyBorder(6, 14, 6, 14));
+
+            JLabel titleLabel = new JLabel(title);
+            titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 10));
+            titleLabel.setForeground(new Color(203, 213, 225)); // Slate 300
+
+            valueLabel = new JLabel(initialValue);
+            valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            valueLabel.setForeground(textColor);
+
+            add(titleLabel, BorderLayout.NORTH);
+            add(valueLabel, BorderLayout.CENTER);
+        }
+
+        public void setValue(String val) {
+            valueLabel.setText(val);
+        }
+    }
+
+    /**
+     * Custom-painted Slot Card that guarantees 100% visible, high-contrast
+     * colors and avoids Windows Look & Feel button painting bugs.
+     */
+    public static class SlotCard extends JButton {
+        private final String slotId;
+        private final String slotType;
+        private final boolean occupied;
+        private final String plateNumber;
+        private final String ownerName;
+
+        public SlotCard(ParkingSlot slot) {
+            this.slotId = slot.getSlotId();
+            this.slotType = slot.getSupportedType();
+            this.occupied = !slot.isAvailable();
+            if (occupied && slot.getCurrentVehicle() != null) {
+                this.plateNumber = slot.getCurrentVehicle().getPlateNumber();
+                this.ownerName = slot.getCurrentVehicle().getOwnerName();
+            } else {
+                this.plateNumber = "";
+                this.ownerName = "";
+            }
+
+            setContentAreaFilled(false);
+            setFocusPainted(false);
+            setBorderPainted(false);
+            setOpaque(false);
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            setPreferredSize(new Dimension(180, 88));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            int w = getWidth();
+            int h = getHeight();
+            int arc = 12;
+
+            Color cardBg;
+            Color borderColor;
+            Color slotIdColor;
+            Color detailColor;
+            Color badgeBg;
+            Color badgeText;
+            String statusText;
+
+            if (!occupied) {
+                // High-contrast clean Emerald Green card
+                cardBg = getModel().isRollover() ? new Color(220, 252, 231) : new Color(240, 253, 244);
+                borderColor = new Color(22, 163, 74);
+                slotIdColor = new Color(20, 83, 45);
+                detailColor = new Color(22, 101, 52);
+                badgeBg = new Color(187, 247, 208);
+                badgeText = new Color(20, 83, 45);
+                statusText = "AVAILABLE";
+            } else {
+                // High-contrast clean Crimson Red card
+                cardBg = getModel().isRollover() ? new Color(254, 226, 226) : new Color(254, 242, 242);
+                borderColor = new Color(220, 38, 38);
+                slotIdColor = new Color(127, 29, 29);
+                detailColor = new Color(153, 27, 27);
+                badgeBg = new Color(254, 202, 202);
+                badgeText = new Color(127, 29, 29);
+                statusText = "OCCUPIED";
+            }
+
+            // Draw Background Surface
+            g2.setColor(cardBg);
+            g2.fillRoundRect(2, 2, w - 4, h - 4, arc, arc);
+
+            // Draw Crisp 2px Border
+            g2.setColor(borderColor);
+            g2.setStroke(new BasicStroke(getModel().isRollover() ? 2.5f : 1.8f));
+            g2.drawRoundRect(2, 2, w - 5, h - 5, arc, arc);
+
+            // Draw Slot ID (Top Left)
+            g2.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            g2.setColor(slotIdColor);
+            g2.drawString(slotId, 12, 23);
+
+            // Draw Vehicle Type Tag (Top Right)
+            String typeTag = "[" + slotType.toUpperCase() + "]";
+            g2.setFont(new Font("Segoe UI", Font.BOLD, 10));
+            FontMetrics fm = g2.getFontMetrics();
+            int tagW = fm.stringWidth(typeTag);
+            g2.setColor(badgeText);
+            g2.drawString(typeTag, w - tagW - 12, 23);
+
+            // Subtle Divider Line
+            g2.setColor(new Color(borderColor.getRed(), borderColor.getGreen(), borderColor.getBlue(), 60));
+            g2.drawLine(12, 31, w - 12, 31);
+
+            // Middle Content Area
+            if (occupied) {
+                // Prominent bold license plate
+                g2.setFont(new Font("Segoe UI", Font.BOLD, 14));
+                g2.setColor(detailColor);
+                g2.drawString(plateNumber, 12, 51);
+
+                // Driver owner name
+                g2.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                g2.setColor(THEME_TEXT_MUTED);
+                String displayOwner = ownerName.length() > 18 ? ownerName.substring(0, 16) + "..." : ownerName;
+                g2.drawString(displayOwner, 12, 68);
+            } else {
+                g2.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                g2.setColor(detailColor);
+                g2.drawString("Ready for Parking", 12, 52);
+            }
+
+            // Bottom Right Status Badge Pill
+            int pillW = 86;
+            int pillH = 17;
+            int pillX = w - pillW - 10;
+            int pillY = h - pillH - 8;
+            g2.setColor(badgeBg);
+            g2.fillRoundRect(pillX, pillY, pillW, pillH, 8, 8);
+            g2.setColor(badgeText);
+            g2.setFont(new Font("Segoe UI", Font.BOLD, 9));
+            FontMetrics pillFm = g2.getFontMetrics();
+            String fullBadge = (occupied ? "● " : "✓ ") + statusText;
+            int strX = pillX + (pillW - pillFm.stringWidth(fullBadge)) / 2;
+            int strY = pillY + ((pillH - pillFm.getHeight()) / 2) + pillFm.getAscent();
+            g2.drawString(fullBadge, strX, strY);
+
+            g2.dispose();
+        }
+    }
+
+    /**
+     * Custom Button with smooth rounded corners and guaranteed high-contrast colors.
+     */
+    private static class ModernButton extends JButton {
+        private final Color normalBg;
+        private final Color hoverBg;
+
+        public ModernButton(String text, Color bg, Color hover) {
+            super(text);
+            this.normalBg = bg;
+            this.hoverBg = hover;
+            setContentAreaFilled(false);
+            setFocusPainted(false);
+            setBorderPainted(false);
+            setOpaque(false);
+            setForeground(Color.WHITE);
+            setFont(new Font("Segoe UI", Font.BOLD, 13));
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            if (getModel().isPressed()) {
+                g2.setColor(normalBg.darker());
+            } else if (getModel().isRollover()) {
+                g2.setColor(hoverBg);
+            } else {
+                g2.setColor(normalBg);
+            }
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+            g2.dispose();
+            super.paintComponent(g);
+        }
     }
 }
