@@ -56,15 +56,25 @@ public class Main {
             watcherThread.start();
             System.out.println("[INFO] Background OverstayWatcher daemon thread started successfully.");
 
-            // Check if automated test mode was requested
+            // Mode 1: Automated test suite verification
             if (args.length > 0 && "--test".equalsIgnoreCase(args[0])) {
                 runAutomatedConcurrencyTest();
                 return;
             }
 
-            // Normal Execution: Launch Interactive CLI Menu
-            ConsoleMenu menu = new ConsoleMenu(lot);
-            menu.start();
+            // Mode 2: Terminal Console CLI Menu
+            if (args.length > 0 && "--cli".equalsIgnoreCase(args[0])) {
+                ConsoleMenu menu = new ConsoleMenu(lot);
+                menu.start();
+                return;
+            }
+
+            // Mode 3 (Default): Launch Modern Swing GUI Dashboard on the Event Dispatch Thread (EDT)
+            System.out.println("[INFO] Launching SmartPark Swing Desktop Dashboard on Event Dispatch Thread (EDT)...");
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                smartpark.ui.gui.MainFrame frame = new smartpark.ui.gui.MainFrame(lot);
+                frame.setVisible(true);
+            });
 
         } catch (Exception e) {
             System.err.println("[FATAL] Could not initialize SmartPark application: " + e.getMessage());
