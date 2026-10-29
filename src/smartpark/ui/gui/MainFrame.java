@@ -740,8 +740,11 @@ public class MainFrame extends JFrame {
         ((JPanel) dialog.getContentPane()).setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
         dialog.getContentPane().setBackground(Color.WHITE);
 
-        Integer[] ticketIds = activeTickets.stream().map(Ticket::getTicketId).toArray(Integer[]::new);
-        JComboBox<Integer> ticketCombo = new JComboBox<>(ticketIds);
+        JComboBox<String> vehicleCombo = new JComboBox<>();
+        for (Ticket t : activeTickets) {
+            vehicleCombo.addItem(t.getVehicle().getPlateNumber() + "  (#" + t.getTicketId() + ")");
+        }
+        vehicleCombo.setEditable(true);
 
         JLabel feePreviewLabel = new JLabel("Calculating...");
         feePreviewLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
@@ -751,23 +754,59 @@ public class MainFrame extends JFrame {
         JLabel promptLabel = new JLabel("Cash Tendered (Rs):");
         JTextField paymentInputField = new JTextField();
 
-        Runnable updateFeePreview = () -> {
-            Integer selectedId = (Integer) ticketCombo.getSelectedItem();
-            if (selectedId != null) {
-                Ticket t = parkingLot.findActiveTicketById(selectedId);
-                if (t != null) {
-                    long now = System.currentTimeMillis();
-                    int hours = t.calculateHoursParked(now);
-                    double fee = t.getVehicle().calculateFee(hours);
-                    feePreviewLabel.setText(String.format("Rs. %.2f (%d hr)", fee, hours));
-                    if ("Cash".equals(paymentChannelCombo.getSelectedItem())) {
-                        paymentInputField.setText(String.format("%.2f", fee));
-                    }
+        java.util.function.Supplier<Ticket> getSelectedTicket = () -> {
+            Object item = vehicleCombo.getSelectedItem();
+            if (item == null) return null;
+            String text = item.toString().trim();
+            if (text.isEmpty()) return null;
+
+            // 1. Match by plate directly (e.g. before whitespace)
+            String plate = text.contains(" ") ? text.split("\\s+")[0].trim() : text;
+            Ticket t = parkingLot.findActiveTicketByPlate(plate);
+            if (t != null) return t;
+
+            // Also check full text as plate
+            t = parkingLot.findActiveTicketByPlate(text);
+            if (t != null) return t;
+
+            // 2. Try parsing numeric Ticket ID (e.g. from "#1001" or "1001")
+            try {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("#?(\\d{4,})").matcher(text);
+                if (m.find()) {
+                    int id = Integer.parseInt(m.group(1));
+                    t = parkingLot.findActiveTicketById(id);
+                    if (t != null) return t;
                 }
+            } catch (Exception ignored) {}
+
+            return null;
+        };
+
+        Runnable updateFeePreview = () -> {
+            Ticket t = getSelectedTicket.get();
+            if (t != null) {
+                long now = System.currentTimeMillis();
+                int hours = t.calculateHoursParked(now);
+                double fee = t.getVehicle().calculateFee(hours);
+                feePreviewLabel.setText(String.format("Rs. %.2f (%d hr) - %s", fee, hours, t.getVehicle().getVehicleType()));
+                if ("Cash".equals(paymentChannelCombo.getSelectedItem())) {
+                    paymentInputField.setText(String.format("%.2f", fee));
+                }
+            } else {
+                feePreviewLabel.setText("Enter valid Vehicle / Ticket ID");
             }
         };
 
-        ticketCombo.addActionListener(e -> updateFeePreview.run());
+        vehicleCombo.addActionListener(e -> updateFeePreview.run());
+        if (vehicleCombo.getEditor() != null) {
+            vehicleCombo.getEditor().getEditorComponent().addKeyListener(new java.awt.event.KeyAdapter() {
+                @Override
+                public void keyReleased(java.awt.event.KeyEvent e) {
+                    updateFeePreview.run();
+                }
+            });
+        }
+
         paymentChannelCombo.addActionListener(e -> {
             boolean isCash = "Cash".equals(paymentChannelCombo.getSelectedItem());
             promptLabel.setText(isCash ? "Cash Tendered (Rs):" : "Customer UPI VPA:");
@@ -776,8 +815,8 @@ public class MainFrame extends JFrame {
 
         updateFeePreview.run();
 
-        dialog.add(new JLabel("Select Ticket ID:"));
-        dialog.add(ticketCombo);
+        dialog.add(new JLabel("Vehicle Number / Plate:"));
+        dialog.add(vehicleCombo);
         dialog.add(new JLabel("Calculated Parking Fee:"));
         dialog.add(feePreviewLabel);
         dialog.add(new JLabel("Payment Channel:"));
@@ -787,8 +826,12 @@ public class MainFrame extends JFrame {
 
         ModernButton checkoutBtn = new ModernButton("Settle & Release Slot", THEME_PRIMARY, new Color(59, 130, 246));
         checkoutBtn.addActionListener(e -> {
-            Integer ticketId = (Integer) ticketCombo.getSelectedItem();
-            if (ticketId == null) return;
+            Ticket targetTicket = getSelectedTicket.get();
+            if (targetTicket == null) {
+                JOptionPane.showMessageDialog(dialog, "Please select or enter a valid active Vehicle Number.", "Vehicle Not Found", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            int ticketId = targetTicket.getTicketId();
 
             String channel = (String) paymentChannelCombo.getSelectedItem();
             String input = paymentInputField.getText().trim();

@@ -158,13 +158,24 @@ public class ConsoleMenu {
 
     private void handleExitVehicle() {
         System.out.println("\n--- [2] Vehicle Departure & Settle Payment ---");
-        int ticketId = readInt("Enter Ticket ID to checkout: ");
+        String input = readString("Enter Vehicle License Plate or Ticket ID to checkout: ").trim();
 
-        Ticket activeTicket = parkingLot.findActiveTicketById(ticketId);
+        Ticket activeTicket = null;
+        try {
+            int ticketId = Integer.parseInt(input.replace("#", "").trim());
+            activeTicket = parkingLot.findActiveTicketById(ticketId);
+        } catch (NumberFormatException ignored) {}
+
         if (activeTicket == null) {
-            System.out.println("[ERROR] Active ticket #" + ticketId + " was not found in the lot.");
+            activeTicket = parkingLot.findActiveTicketByPlate(input);
+        }
+
+        if (activeTicket == null) {
+            System.out.println("[ERROR] No active parked vehicle found for: '" + input + "'.");
             return;
         }
+
+        int ticketId = activeTicket.getTicketId();
 
         long now = System.currentTimeMillis();
         int billedHours = activeTicket.calculateHoursParked(now);

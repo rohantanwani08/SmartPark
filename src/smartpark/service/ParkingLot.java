@@ -336,6 +336,23 @@ public class ParkingLot {
     }
 
     /**
+     * Looks up an active ticket by the vehicle's license plate number (case-insensitive).
+     *
+     * @param plateNumber vehicle license plate string
+     * @return matching active Ticket, or null if not found
+     */
+    public synchronized Ticket findActiveTicketByPlate(String plateNumber) {
+        if (plateNumber == null) return null;
+        String clean = plateNumber.trim();
+        for (Ticket ticket : activeTickets) {
+            if (ticket.getVehicle().getPlateNumber().equalsIgnoreCase(clean)) {
+                return ticket;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Calculates total slot capacity across all floors.
      */
     public int getTotalCapacity() {
