@@ -29,25 +29,18 @@ public class Main {
 
     public static void main(String[] args) {
         try {
-            // Configure a 2-Floor Parking Facility
-            Floor floor1 = new Floor(1, 3, 2, 1);
-            Floor floor2 = new Floor(2, 3, 2, 0);
-            ParkingLot lot = new ParkingLot("SmartPark Central Plaza", new Floor[] { floor1, floor2 });
+            // Configure a 3-Floor Modern Multi-Level Parking Facility
+            Floor floor1 = new Floor(1, 6, 3, 2); // Floor 1: 6 Cars, 3 Bikes, 2 Trucks (11 slots)
+            Floor floor2 = new Floor(2, 6, 3, 1); // Floor 2: 6 Cars, 3 Bikes, 1 Truck  (10 slots)
+            Floor floor3 = new Floor(3, 6, 3, 0); // Floor 3: 6 Cars, 3 Bikes, 0 Trucks (9 slots) - Total = 30 slots
+            ParkingLot lot = new ParkingLot("SmartPark Central Plaza", new Floor[] { floor1, floor2, floor3 });
 
             // Initialize Dual-Mode File Manager
             FileManager fileManager = new FileManager(ACTIVE_TICKETS_FILE, BINARY_LOG_FILE);
             lot.setFileManager(fileManager);
 
-            // Reload active state from persistent character stream
-            int restoredCount = fileManager.loadActiveTickets(lot);
-            if (restoredCount > 0) {
-                System.out.printf("[INFO] Successfully restored %d active vehicle(s) from '%s'.%n",
-                        restoredCount, ACTIVE_TICKETS_FILE);
-            } else {
-                lot.parkVehicle(new Car("MH-12-AB-1234", "Rohan Tanwani"));
-                lot.parkVehicle(new Bike("MH-14-XY-9876", "Amit Verma"));
-                System.out.println("[INFO] Initialized facility with demo vehicles and saved to persistent storage.");
-            }
+            // Populate or restore enterprise dataset (20 vehicles + historical audit ledger)
+            seedEnterpriseDataIfLow(lot, fileManager);
 
             // Start Background Daemon Overstay Watcher (Scans every 5 seconds for vehicles exceeding 3 hours)
             OverstayWatcher watcher = new OverstayWatcher(lot, 3 * 3600 * 1000L, 5000L);
@@ -208,5 +201,93 @@ public class Main {
         demoWatcher.stop();
 
         System.out.println("\n[SUCCESS] Phase 8 multithreading & concurrency verified with 100% integrity.");
+    }
+
+    /**
+     * Seeds enterprise demonstration dataset:
+     * - Populates historical departures into the binary audit ledger (.dat) with both UPI and Cash payments.
+     * - Parks 20 active vehicles (10 Cars, 7 Bikes, 3 Trucks) across 3 floors.
+     * - Auto-persists the active fleet into tickets.txt.
+     */
+    private static void seedEnterpriseDataIfLow(ParkingLot lot, FileManager fileManager) {
+        try {
+            // 1. Sync or Seed Historical Audit Ledger (Binary Byte Stream)
+            List<FileManager.AuditLogEntry> logs = fileManager.readBinaryLogs();
+            if (logs.isEmpty()) {
+                long now = System.currentTimeMillis();
+                Ticket t1 = new Ticket(995, new Car("MH-12-DE-1001", "Priya Kulkarni", "Petrol"), null, now - 5 * 3600 * 1000L, now - 3600 * 1000L, false);
+                Ticket t2 = new Ticket(996, new Bike("MH-14-BK-2002", "Rajesh Sharma", "Petrol"), null, now - 4 * 3600 * 1000L, now - 1800 * 1000L, false);
+                Ticket t3 = new Ticket(997, new Truck("MH-04-TR-3003", "Tata Express", "Diesel", 12.0), null, now - 8 * 3600 * 1000L, now - 2 * 3600 * 1000L, false);
+                Ticket t4 = new Ticket(998, new Car("DL-01-CA-4004", "Vikram Malhotra", "Electric"), null, now - 6 * 3600 * 1000L, now - 3600 * 1000L, false);
+                Ticket t5 = new Ticket(999, new Bike("KA-03-EB-5005", "Sneha Rao", "Electric"), null, now - 3 * 3600 * 1000L, now - 900 * 1000L, false);
+                Ticket t6 = new Ticket(1000, new Car("TN-07-ZZ-6006", "Karthik Raja", "Diesel"), null, now - 7 * 3600 * 1000L, now - 2 * 3600 * 1000L, false);
+
+                fileManager.appendClosedTicketLog(t1, 120.00, "UPI");
+                fileManager.appendClosedTicketLog(t2, 40.00, "Cash");
+                fileManager.appendClosedTicketLog(t3, 420.00, "UPI");
+                fileManager.appendClosedTicketLog(t4, 180.00, "UPI");
+                fileManager.appendClosedTicketLog(t5, 60.00, "Cash");
+                fileManager.appendClosedTicketLog(t6, 240.00, "Cash");
+
+                logs = fileManager.readBinaryLogs();
+            }
+
+            double totalRev = 0.0;
+            for (FileManager.AuditLogEntry log : logs) {
+                totalRev += log.getFeePaid();
+            }
+            lot.setTotalRevenue(totalRev);
+
+            // 2. Load or Seed Active Fleet (Character Stream CSV)
+            int restoredCount = fileManager.loadActiveTickets(lot);
+            if (restoredCount < 15) {
+                lot.resetActiveState();
+                Ticket.resetIdCounter(1000);
+
+                System.out.println("[INFO] Seeding enterprise dataset of 20 vehicles across 3 levels...");
+                Vehicle[] fleet = new Vehicle[] {
+                        // 10 Passenger Cars
+                        new Car("MH-12-RT-1001", "Rohan Tanwani", "Petrol"),
+                        new Car("MH-14-AV-1002", "Amit Verma", "Diesel"),
+                        new Car("DL-01-AK-1003", "Ananya Sharma", "Electric"),
+                        new Car("KA-03-SP-1004", "Siddharth Patil", "Petrol"),
+                        new Car("TN-07-AR-1005", "Aditya Rao", "Diesel"),
+                        new Car("MH-02-KS-1006", "Karan Singh", "Petrol"),
+                        new Car("GJ-01-PM-1007", "Pooja Mehta", "Electric"),
+                        new Car("HR-26-DK-1008", "Deepak Kumar", "Petrol"),
+                        new Car("WB-02-SB-1009", "Sneha Banerjee", "Electric"),
+                        new Car("TS-09-VR-1010", "Vikram Reddy", "Diesel"),
+
+                        // 7 Two-Wheelers
+                        new Bike("MH-12-BK-2001", "Rahul Joshi", "Petrol"),
+                        new Bike("MH-14-SM-2002", "Sameer Kulkarni", "Petrol"),
+                        new Bike("DL-04-TC-2003", "Tarun Chawla", "Electric"),
+                        new Bike("KA-05-RJ-2004", "Ramesh Jain", "Petrol"),
+                        new Bike("TN-02-VP-2005", "Vijay Prakash", "Electric"),
+                        new Bike("MH-03-PK-2006", "Pratik Kadam", "Petrol"),
+                        new Bike("GJ-06-MN-2007", "Manish Nair", "Electric"),
+
+                        // 3 Heavy Commercial Trucks
+                        new Truck("MH-04-TR-3001", "Baljit Logistics", "Diesel", 15.0),
+                        new Truck("NL-01-TR-3002", "VRL Transport", "Diesel", 22.0),
+                        new Truck("KA-01-TR-3003", "Southern Express", "Diesel", 18.0)
+                };
+
+                for (Vehicle v : fleet) {
+                    try {
+                        lot.parkVehicle(v);
+                    } catch (Exception e) {
+                        System.err.println("[WARN] Seeding error for " + v.getPlateNumber() + ": " + e.getMessage());
+                    }
+                }
+                System.out.printf("[INFO] Enterprise dataset active: %d / %d slots occupied across 3 floors.%n",
+                        lot.getActiveTickets().size(), lot.getTotalCapacity());
+            } else {
+                System.out.printf("[INFO] Successfully restored %d active vehicle(s) from '%s'.%n",
+                        restoredCount, ACTIVE_TICKETS_FILE);
+            }
+        } catch (Exception e) {
+            System.err.println("[WARN] Seeding encountered an issue: " + e.getMessage());
+        }
     }
 }

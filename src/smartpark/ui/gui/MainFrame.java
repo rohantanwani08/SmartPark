@@ -33,7 +33,6 @@ import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
-import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -64,7 +63,7 @@ import java.util.Map;
  * Features:
  * 1. Custom-painted high-contrast Slot Cards (eliminates Windows L&F color wash bugs).
  * 2. Executive Dark Slate Header with real-time KPI metric badges and live clock.
- * 3. Modern JTabbedPane with custom zebra-striped tables and executive analytics cards.
+ * 3. Modern JTabbedPane with custom zebra-striped tables and visual analytics dashboard.
  * 4. Thread-safe GUI mutations dispatched strictly via SwingUtilities.invokeLater() on EDT.
  */
 public class MainFrame extends JFrame {
@@ -84,14 +83,22 @@ public class MainFrame extends JFrame {
     private DefaultTableModel activeTableModel;
     private DefaultTableModel historyTableModel;
 
-    // Analytics Components
+    // Visual Analytics Components (Zero raw text dump!)
     private JProgressBar occupancyProgressBar;
     private JLabel occupancyPctLabel;
     private JLabel carMixLabel;
     private JLabel bikeMixLabel;
     private JLabel truckMixLabel;
     private JLabel avgTicketLabel;
-    private JTextArea analyticsReportArea;
+
+    // Advanced Visual Analytics Components
+    private JPanel floorBarsContainer;
+    private JLabel upiRevLabel;
+    private JLabel cashRevLabel;
+    private JProgressBar upiProgressBar;
+    private JProgressBar cashProgressBar;
+    private JLabel totalSessionsLabel;
+    private JLabel watcherStatusLabel;
 
     // Executive Color Palette
     private static final Color THEME_HEADER_BG = new Color(15, 23, 42);      // Slate 900
@@ -108,8 +115,8 @@ public class MainFrame extends JFrame {
         this.slotCards = new HashMap<>();
 
         setTitle("SmartPark Enterprise - " + parkingLot.getLotName());
-        setSize(1180, 800);
-        setMinimumSize(new Dimension(1020, 680));
+        setSize(1220, 840);
+        setMinimumSize(new Dimension(1040, 700));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
@@ -144,7 +151,7 @@ public class MainFrame extends JFrame {
         // Tab 3: Historical Audit Trail
         tabbedPane.addTab("Financial Audit Ledger", createHistoryTablePanel());
 
-        // Tab 4: Executive Analytics & Insights
+        // Tab 4: Executive Analytics & Insights (Completely Visual!)
         tabbedPane.addTab("Executive Analytics", createAnalyticsPanel());
 
         add(tabbedPane, BorderLayout.CENTER);
@@ -268,81 +275,152 @@ public class MainFrame extends JFrame {
     }
 
     // =========================================================================
-    // Tab 4: Executive Analytics Panel
+    // Tab 4: Modern Visual Executive Analytics Panel (Completely Visual!)
     // =========================================================================
 
     private JPanel createAnalyticsPanel() {
-        JPanel panel = new JPanel(new BorderLayout(15, 15));
-        panel.setBackground(THEME_PAGE_BG);
-        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        JPanel mainPanel = new JPanel(new BorderLayout(16, 16));
+        mainPanel.setBackground(THEME_PAGE_BG);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(18, 18, 18, 18));
 
-        // Top KPI Gauge Strip
-        JPanel topStrip = new JPanel(new GridLayout(1, 3, 15, 0));
+        // 1. TOP STATS STRIP (3 Primary Metric Cards)
+        JPanel topStrip = new JPanel(new GridLayout(1, 3, 16, 0));
         topStrip.setOpaque(false);
 
-        // Utilization Card
-        JPanel utilCard = createAnalyticsCard("FACILITY UTILIZATION");
+        // Card A: Facility Utilization Meter
+        JPanel utilCard = createAnalyticsCard("OVERALL FACILITY UTILIZATION");
         occupancyProgressBar = new JProgressBar(0, 100);
         occupancyProgressBar.setStringPainted(true);
         occupancyProgressBar.setFont(new Font("Segoe UI", Font.BOLD, 12));
         occupancyProgressBar.setForeground(THEME_PRIMARY);
         occupancyProgressBar.setPreferredSize(new Dimension(200, 26));
 
-        occupancyPctLabel = new JLabel("0.0% Occupied");
-        occupancyPctLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        occupancyPctLabel = new JLabel("0.0% Occupancy");
+        occupancyPctLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
         occupancyPctLabel.setForeground(THEME_PRIMARY);
 
         utilCard.add(occupancyPctLabel, BorderLayout.CENTER);
         utilCard.add(occupancyProgressBar, BorderLayout.SOUTH);
         topStrip.add(utilCard);
 
-        // Vehicle Mix Card
-        JPanel mixCard = createAnalyticsCard("ACTIVE VEHICLE DISTRIBUTION");
+        // Card B: Vehicle Mix Distribution
+        JPanel mixCard = createAnalyticsCard("ACTIVE VEHICLE CATEGORY RATIO");
         JPanel mixLabels = new JPanel(new GridLayout(3, 1, 4, 4));
         mixLabels.setOpaque(false);
-        carMixLabel = new JLabel("● Cars : 0 (0%)");
-        bikeMixLabel = new JLabel("● Bikes: 0 (0%)");
+        carMixLabel = new JLabel("● Cars  : 0 (0%)");
+        bikeMixLabel = new JLabel("● Bikes : 0 (0%)");
         truckMixLabel = new JLabel("● Trucks: 0 (0%)");
-        carMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        bikeMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        truckMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        carMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        bikeMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        truckMixLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        carMixLabel.setForeground(THEME_PRIMARY);
+        bikeMixLabel.setForeground(THEME_SUCCESS);
+        truckMixLabel.setForeground(new Color(217, 119, 6)); // Amber
         mixLabels.add(carMixLabel);
         mixLabels.add(bikeMixLabel);
         mixLabels.add(truckMixLabel);
         mixCard.add(mixLabels, BorderLayout.CENTER);
         topStrip.add(mixCard);
 
-        // Revenue Card
+        // Card C: Revenue Average KPI
         JPanel revCard = createAnalyticsCard("HISTORICAL TICKET AVERAGE");
         avgTicketLabel = new JLabel("Rs. 0.00 / session");
-        avgTicketLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        avgTicketLabel.setFont(new Font("Segoe UI", Font.BOLD, 22));
         avgTicketLabel.setForeground(THEME_SUCCESS);
+        totalSessionsLabel = new JLabel("0 historical sessions settled");
+        totalSessionsLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        totalSessionsLabel.setForeground(THEME_TEXT_MUTED);
+
         revCard.add(avgTicketLabel, BorderLayout.CENTER);
+        revCard.add(totalSessionsLabel, BorderLayout.SOUTH);
         topStrip.add(revCard);
 
-        panel.add(topStrip, BorderLayout.NORTH);
+        mainPanel.add(topStrip, BorderLayout.NORTH);
 
-        // Center Executive Report
-        analyticsReportArea = new JTextArea();
-        analyticsReportArea.setEditable(false);
-        analyticsReportArea.setFont(new Font("Consolas", Font.PLAIN, 13));
-        analyticsReportArea.setBackground(Color.WHITE);
-        analyticsReportArea.setForeground(THEME_TEXT_DARK);
-        analyticsReportArea.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        // 2. CENTER SECTION: 2-COLUMN MODERN VISUAL DASHBOARD (Zero plain text dump!)
+        JPanel centerGrid = new JPanel(new GridLayout(1, 2, 16, 0));
+        centerGrid.setOpaque(false);
 
-        JScrollPane scroll = new JScrollPane(analyticsReportArea);
-        scroll.setBorder(BorderFactory.createLineBorder(new Color(203, 213, 225), 1));
-        panel.add(scroll, BorderLayout.CENTER);
+        // Column 1: Floor-by-Floor Live Capacity Bars
+        JPanel floorCard = createAnalyticsCard("FLOOR-BY-FLOOR OCCUPANCY & CAPACITY");
+        floorBarsContainer = new JPanel();
+        floorBarsContainer.setLayout(new BoxLayout(floorBarsContainer, BoxLayout.Y_AXIS));
+        floorBarsContainer.setOpaque(false);
+        JScrollPane floorScroll = new JScrollPane(floorBarsContainer);
+        floorScroll.setBorder(null);
+        floorScroll.setOpaque(false);
+        floorScroll.getViewport().setOpaque(false);
+        floorCard.add(floorScroll, BorderLayout.CENTER);
+        centerGrid.add(floorCard);
 
-        return panel;
+        // Column 2: Financial Performance & Channel Split
+        JPanel financeCard = createAnalyticsCard("PAYMENT CHANNEL PERFORMANCE & AUDIT");
+        JPanel financeContent = new JPanel();
+        financeContent.setLayout(new BoxLayout(financeContent, BoxLayout.Y_AXIS));
+        financeContent.setOpaque(false);
+
+        // UPI Row
+        upiRevLabel = new JLabel("UPI Collections: Rs. 0.00 (0%)");
+        upiRevLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        upiRevLabel.setForeground(THEME_PRIMARY);
+        upiProgressBar = new JProgressBar(0, 100);
+        upiProgressBar.setStringPainted(true);
+        upiProgressBar.setForeground(THEME_PRIMARY);
+        upiProgressBar.setPreferredSize(new Dimension(300, 22));
+
+        // Cash Row
+        cashRevLabel = new JLabel("Cash Collections: Rs. 0.00 (0%)");
+        cashRevLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        cashRevLabel.setForeground(THEME_SUCCESS);
+        cashProgressBar = new JProgressBar(0, 100);
+        cashProgressBar.setStringPainted(true);
+        cashProgressBar.setForeground(THEME_SUCCESS);
+        cashProgressBar.setPreferredSize(new Dimension(300, 22));
+
+        // System Health Callout
+        JPanel healthCallout = new JPanel(new BorderLayout());
+        healthCallout.setBackground(new Color(240, 253, 244));
+        healthCallout.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(187, 247, 208), 1),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+
+        watcherStatusLabel = new JLabel("OverstayWatcher Daemon: ACTIVE (Scanning background active tickets)");
+        watcherStatusLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        watcherStatusLabel.setForeground(new Color(22, 101, 52));
+        healthCallout.add(watcherStatusLabel, BorderLayout.CENTER);
+
+        financeContent.add(upiRevLabel);
+        financeContent.add(Box.createVerticalStrut(6));
+        financeContent.add(upiProgressBar);
+        financeContent.add(Box.createVerticalStrut(14));
+        financeContent.add(cashRevLabel);
+        financeContent.add(Box.createVerticalStrut(6));
+        financeContent.add(cashProgressBar);
+        financeContent.add(Box.createVerticalStrut(20));
+        financeContent.add(healthCallout);
+
+        financeCard.add(financeContent, BorderLayout.CENTER);
+        centerGrid.add(financeCard);
+
+        mainPanel.add(centerGrid, BorderLayout.CENTER);
+
+        // 3. BOTTOM REFRESH BAR
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        bottomBar.setOpaque(false);
+        ModernButton refreshAnalyticsBtn = new ModernButton("Refresh Intelligence", THEME_PRIMARY, new Color(59, 130, 246));
+        refreshAnalyticsBtn.addActionListener(e -> refreshDashboard());
+        bottomBar.add(refreshAnalyticsBtn);
+        mainPanel.add(bottomBar, BorderLayout.SOUTH);
+
+        return mainPanel;
     }
 
     private JPanel createAnalyticsCard(String title) {
-        JPanel card = new JPanel(new BorderLayout(5, 5));
+        JPanel card = new JPanel(new BorderLayout(8, 8));
         card.setBackground(Color.WHITE);
         card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(new Color(226, 232, 240), 1),
-                BorderFactory.createEmptyBorder(12, 14, 12, 14)));
+                BorderFactory.createEmptyBorder(14, 16, 14, 16)));
 
         JLabel titleLbl = new JLabel(title);
         titleLbl.setFont(new Font("Segoe UI", Font.BOLD, 11));
@@ -459,12 +537,12 @@ public class MainFrame extends JFrame {
             } catch (Exception ignored) {}
         }
 
-        // 5. Update Analytics Tab
+        // 5. Update Visual Analytics Panel
         AnalyticsService analytics = new AnalyticsService(parkingLot);
         double rate = analytics.getOccupancyRate();
         occupancyProgressBar.setValue((int) rate);
         occupancyProgressBar.setString(String.format("%.1f%%", rate));
-        occupancyPctLabel.setText(String.format("%.1f%% Occupancy", rate));
+        occupancyPctLabel.setText(String.format("%.1f%% Occupied", rate));
 
         Map<String, Integer> mix = analytics.getActiveVehicleMix();
         int activeCount = parkingLot.getActiveTickets().size();
@@ -476,8 +554,67 @@ public class MainFrame extends JFrame {
         bikeMixLabel.setText(String.format("● Bikes : %d (%.0f%%)", mix.get("Bike"), bPct));
         truckMixLabel.setText(String.format("● Trucks: %d (%.0f%%)", mix.get("Truck"), tPct));
 
-        avgTicketLabel.setText(String.format("Rs. %.2f avg", analytics.getAverageTransactionValue()));
-        analyticsReportArea.setText(analytics.getExecutiveSummary());
+        avgTicketLabel.setText(String.format("Rs. %.2f", analytics.getAverageTransactionValue()));
+        totalSessionsLabel.setText(analytics.getTotalHistoricalSessions() + " departures settled to persistent audit ledger");
+
+        // 6. Update Visual Floor Progress Bars
+        if (floorBarsContainer != null) {
+            floorBarsContainer.removeAll();
+            Map<Integer, Double> floorRates = analytics.getFloorOccupancyRates();
+            for (Floor f : parkingLot.getFloors()) {
+                int fNum = f.getFloorNumber();
+                double fRate = floorRates.getOrDefault(fNum, 0.0);
+
+                JPanel fRow = new JPanel(new BorderLayout(5, 4));
+                fRow.setOpaque(false);
+                fRow.setBorder(BorderFactory.createEmptyBorder(4, 0, 8, 0));
+
+                JLabel fLbl = new JLabel(String.format("Floor %d  (%d / %d slots occupied)",
+                        fNum, f.getOccupiedCount(), f.getTotalSlots()));
+                fLbl.setFont(new Font("Segoe UI", Font.BOLD, 12));
+                fLbl.setForeground(THEME_TEXT_DARK);
+
+                JProgressBar fBar = new JProgressBar(0, 100);
+                fBar.setValue((int) fRate);
+                fBar.setStringPainted(true);
+                fBar.setString(String.format("%.1f%% Occupied", fRate));
+                fBar.setPreferredSize(new Dimension(240, 20));
+                fBar.setFont(new Font("Segoe UI", Font.BOLD, 11));
+
+                if (fRate >= 80.0) {
+                    fBar.setForeground(THEME_DANGER);
+                } else if (fRate >= 50.0) {
+                    fBar.setForeground(THEME_PRIMARY);
+                } else {
+                    fBar.setForeground(THEME_SUCCESS);
+                }
+
+                fRow.add(fLbl, BorderLayout.NORTH);
+                fRow.add(fBar, BorderLayout.CENTER);
+                floorBarsContainer.add(fRow);
+            }
+            floorBarsContainer.revalidate();
+            floorBarsContainer.repaint();
+        }
+
+        // 7. Update Financial Channel Split
+        Map<String, Double> channelRev = analytics.getPaymentChannelRevenue();
+        double upiAmt = channelRev.getOrDefault("UPI", 0.0);
+        double cashAmt = channelRev.getOrDefault("Cash", 0.0);
+        double totalRevAll = upiAmt + cashAmt;
+
+        double upiPct = totalRevAll > 0 ? (upiAmt * 100.0) / totalRevAll : 0.0;
+        double cashPct = totalRevAll > 0 ? (cashAmt * 100.0) / totalRevAll : 0.0;
+
+        if (upiRevLabel != null) {
+            upiRevLabel.setText(String.format("UPI Collections: Rs. %.2f (%.1f%%)", upiAmt, upiPct));
+            upiProgressBar.setValue((int) upiPct);
+            upiProgressBar.setString(String.format("%.1f%% of revenue", upiPct));
+
+            cashRevLabel.setText(String.format("Cash Collections: Rs. %.2f (%.1f%%)", cashAmt, cashPct));
+            cashProgressBar.setValue((int) cashPct);
+            cashProgressBar.setString(String.format("%.1f%% of revenue", cashPct));
+        }
     }
 
     private void showSlotDetails(ParkingSlot slot) {

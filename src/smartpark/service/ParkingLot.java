@@ -59,6 +59,10 @@ public class ParkingLot {
         return fileManager;
     }
 
+    public synchronized void setTotalRevenue(double totalRevenue) {
+        this.totalRevenue = Math.max(0.0, totalRevenue);
+    }
+
     /**
      * Re-inserts an active ticket directly during persistence file reload.
      */
@@ -66,6 +70,18 @@ public class ParkingLot {
         if (ticket != null) {
             this.activeTickets.add(ticket);
         }
+    }
+
+    /**
+     * Clears all active tickets and vacates all slots.
+     */
+    public synchronized void resetActiveState() {
+        for (Floor floor : floors) {
+            for (ParkingSlot slot : floor.getSlots()) {
+                slot.vacate();
+            }
+        }
+        this.activeTickets.clear();
     }
 
     public String getLotName() {
