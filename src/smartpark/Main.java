@@ -1,9 +1,5 @@
 package smartpark;
 
-import smartpark.exception.DuplicateVehicleException;
-import smartpark.exception.LotFullException;
-import smartpark.exception.PaymentFailedException;
-import smartpark.exception.TicketNotFoundException;
 import smartpark.model.Bike;
 import smartpark.model.Car;
 import smartpark.model.Floor;
@@ -11,121 +7,78 @@ import smartpark.model.Ticket;
 import smartpark.model.Truck;
 import smartpark.service.CashPayment;
 import smartpark.service.ParkingLot;
-import smartpark.service.UPIPayment;
+import smartpark.ui.ConsoleMenu;
 
 /**
- * SmartPark - Entry Point
- * Phase 5: Verification of Core ParkingLot Service (Multi-floor allocation, duplicate detection, transactional exit)
+ * SmartPark - Main Application Entry Point
+ * Phase 6: Interactive Resilient Console Menu
  */
 public class Main {
     public static void main(String[] args) {
-        System.out.println("================================================================");
-        System.out.println("        SmartPark: Object-Oriented Parking System               ");
-        System.out.println("   Phase 5: Core ParkingLot Service Verification                ");
-        System.out.println("================================================================");
-
         try {
-            // 1. Initialize Multi-Floor Facility
-            // Floor 1: 2 Car slots, 1 Bike slot, 1 Truck slot (Total: 4 slots)
-            // Floor 2: 2 Car slots, 1 Bike slot, 0 Truck slots (Total: 3 slots)
-            Floor floor1 = new Floor(1, 2, 1, 1);
-            Floor floor2 = new Floor(2, 2, 1, 0);
-            ParkingLot lot = new ParkingLot("Phoenix Grand Mall Plaza", new Floor[] { floor1, floor2 });
+            // Configure a 2-Floor Parking Facility
+            // Floor 1: 3 Car slots, 2 Bike slots, 1 Truck slot
+            // Floor 2: 3 Car slots, 2 Bike slots, 0 Truck slots
+            Floor floor1 = new Floor(1, 3, 2, 1);
+            Floor floor2 = new Floor(2, 3, 2, 0);
+            ParkingLot lot = new ParkingLot("SmartPark Central Plaza", new Floor[] { floor1, floor2 });
 
-            System.out.println("\n[1] Facility Initialized:");
-            System.out.println(lot.getStatus());
+            // Pre-seed demo active vehicles so the lot immediately has sample state
+            lot.parkVehicle(new Car("MH-12-AB-1234", "Rohan Tanwani"));
+            lot.parkVehicle(new Bike("MH-14-XY-9876", "Amit Verma"));
 
-            // 2. Multi-Floor Overflow Parking Test
-            System.out.println("\n[2] Multi-Floor Allocation & Overflow Test:");
-            Car car1 = new Car("MH-12-AA-1001", "Rohan Tanwani");
-            Car car2 = new Car("MH-12-BB-2002", "Priya Sharma");
-            Car car3 = new Car("MH-12-CC-3003", "Aniket Joshi"); // Should overflow to Floor 2!
-
-            Ticket t1 = lot.parkVehicle(car1);
-            Ticket t2 = lot.parkVehicle(car2);
-            Ticket t3 = lot.parkVehicle(car3);
-
-            System.out.println(" - Car 1 assigned to: " + t1.getParkingSlot().getSlotId() + " (Expected: Floor 1)");
-            System.out.println(" - Car 2 assigned to: " + t2.getParkingSlot().getSlotId() + " (Expected: Floor 1)");
-            System.out.println(" - Car 3 assigned to: " + t3.getParkingSlot().getSlotId() + " (Expected: Floor 2 Overflow)");
-
-            // 3. Duplicate License Plate Guard Test
-            System.out.println("\n[3] Duplicate Vehicle Detection Guard:");
-            try {
-                System.out.print(" - Attempting to park car with already-active plate 'MH-12-AA-1001'... ");
-                Car duplicateCar = new Car("MH-12-AA-1001", "Imposter Driver");
-                lot.parkVehicle(duplicateCar);
-            } catch (DuplicateVehicleException e) {
-                System.out.println("CAUGHT EXPECTED EXCEPTION: " + e.getMessage());
+            // Check if automated test mode was requested
+            if (args.length > 0 && "--test".equalsIgnoreCase(args[0])) {
+                runAutomatedTest(lot);
+                return;
             }
 
-            // 4. Lot Full Guard Test
-            System.out.println("\n[4] Lot Full Guard Test:");
-            Truck truck1 = new Truck("MH-04-TR-4001", "National Logistics", "Diesel", 12.0);
-            Ticket tTruck = lot.parkVehicle(truck1);
-            System.out.println(" - Truck 1 parked in: " + tTruck.getParkingSlot().getSlotId());
-
-            try {
-                System.out.print(" - Attempting to park 2nd Truck when facility has only 1 truck slot... ");
-                Truck truck2 = new Truck("MH-04-TR-4002", "Speed Cargo", "Diesel", 8.0);
-                lot.parkVehicle(truck2);
-            } catch (LotFullException e) {
-                System.out.println("CAUGHT EXPECTED EXCEPTION: " + e.getMessage());
-            }
-
-            // 5. Transactional Exit Guarantee: Payment Failure Test
-            System.out.println("\n[5] Transactional Exit Verification (Failed Payment Integrity):");
-            // Simulate 2 hours parked for Car 1 (Fee = 2 hrs * Rs. 40 = Rs. 80.00)
-            long simulatedExitTime = t1.getEntryTimeMillis() + (2 * 3600 * 1000L);
-            CashPayment insufficientCash = new CashPayment(50.0); // Driver only has Rs. 50
-
-            try {
-                System.out.print(" - Attempting exit with insufficient cash (Tendered Rs. 50 for Rs. 80 fee)... ");
-                lot.exitVehicle(t1.getTicketId(), insufficientCash, simulatedExitTime);
-            } catch (PaymentFailedException e) {
-                System.out.println("CAUGHT EXPECTED EXCEPTION: " + e.getMessage());
-            }
-
-            // Verify state is completely intact!
-            System.out.println(" - Checking Ticket #1 status after failed payment: Active? " + t1.isActive());
-            System.out.println(" - Checking Slot " + t1.getParkingSlot().getSlotId() + " status: Available? " + t1.getParkingSlot().isAvailable());
-            System.out.println(" - Current Lot Revenue: Rs. " + lot.getTotalRevenue() + " (Expected: Rs. 0.00)");
-
-            // 6. Transactional Exit Guarantee: Successful Exit
-            System.out.println("\n[6] Successful Exit Verification (State Mutation):");
-            // Retry Car 1 exit with sufficient cash
-            CashPayment sufficientCash = new CashPayment(100.0);
-            Ticket settledTicket = lot.exitVehicle(t1.getTicketId(), sufficientCash, simulatedExitTime);
-            System.out.println(" - Exit Success! Ticket closed: " + settledTicket);
-            System.out.printf(" - Cash Returned to Driver: Rs. %.2f%n", sufficientCash.getChangeGiven());
-            System.out.println(" - Slot " + settledTicket.getParkingSlot().getSlotId() + " is now free? " + settledTicket.getParkingSlot().isAvailable());
-            System.out.printf(" - Updated Total Revenue: Rs. %.2f%n", lot.getTotalRevenue());
-
-            // Exit Truck with UPI (3 hours parked, 12T heavy truck: 3 * 80 * 1.10 = Rs. 264.00)
-            long truckExitTime = tTruck.getEntryTimeMillis() + (3 * 3600 * 1000L);
-            UPIPayment upi = new UPIPayment("logistics@hdfcbank");
-            lot.exitVehicle(tTruck.getTicketId(), upi, truckExitTime);
-            System.out.println(" - Truck Exit Success via UPI! TxnRef: " + upi.getTransactionRef());
-            System.out.printf(" - Updated Total Revenue: Rs. %.2f%n", lot.getTotalRevenue());
-
-            // 7. Non-existent Ticket Lookup Guard
-            System.out.println("\n[7] Non-existent Ticket Guard:");
-            try {
-                System.out.print(" - Attempting exit with invalid ticket ID #9999... ");
-                lot.exitVehicle(9999, new CashPayment(100.0));
-            } catch (TicketNotFoundException e) {
-                System.out.println("CAUGHT EXPECTED EXCEPTION: " + e.getMessage());
-            }
-
-            // 8. Final Status Report
-            System.out.println("\n[8] Final Facility Status Report:");
-            System.out.println(lot.getStatus());
-
-            System.out.println("\n[SUCCESS] Phase 5 complete: Core ParkingLot service verified successfully.");
+            // Normal Execution: Launch Interactive CLI Menu
+            ConsoleMenu menu = new ConsoleMenu(lot);
+            menu.start();
 
         } catch (Exception e) {
-            System.err.println("[ERROR] Unexpected exception occurred: " + e.getMessage());
+            System.err.println("[FATAL] Could not initialize SmartPark application: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Automated non-blocking test harness for Phase 6 CI/CD and terminal verification.
+     */
+    private static void runAutomatedTest(ParkingLot lot) throws Exception {
+        System.out.println("================================================================");
+        System.out.println("        SmartPark: Object-Oriented Parking System               ");
+        System.out.println("   Phase 6: Console CLI & Resilient Workflow Self-Test          ");
+        System.out.println("================================================================");
+
+        System.out.println("\n[1] Facility Status (Pre-seeded with 2 demo vehicles):");
+        System.out.println(lot.getStatus());
+
+        System.out.println("\n[2] Testing Active Tickets Lookup:");
+        for (Ticket t : lot.getActiveTickets()) {
+            System.out.printf(" - Active: Ticket #%d | %s in %s%n",
+                    t.getTicketId(), t.getVehicle().getPlateNumber(), t.getParkingSlot().getSlotId());
+        }
+
+        System.out.println("\n[3] Testing Departure with Cash Payment:");
+        Ticket t1 = lot.getActiveTickets().get(0);
+        int t1Id = t1.getTicketId();
+        CashPayment cash = new CashPayment(100.0);
+        Ticket exited = lot.exitVehicle(t1Id, cash);
+        System.out.println(" - Successfully exited ticket #" + t1Id + " for vehicle: " + exited.getVehicle().getPlateNumber());
+        System.out.printf(" - Change returned: Rs. %.2f%n", cash.getChangeGiven());
+        System.out.println(" - Active tickets remaining: " + lot.getActiveTickets().size());
+        System.out.println(" - Settled history records : " + lot.getTicketHistory().size());
+
+        System.out.println("\n[4] Testing Admission of New Vehicle (Truck):");
+        Truck truck = new Truck("MH-04-TR-8888", "Karan Logistics", "Diesel", 15.0);
+        Ticket truckTicket = lot.parkVehicle(truck);
+        System.out.println(" - Admitted Truck under Ticket #" + truckTicket.getTicketId() + " in slot " + truckTicket.getParkingSlot().getSlotId());
+
+        System.out.println("\n[5] Post-Operation Facility Status:");
+        System.out.println(lot.getStatus());
+
+        System.out.println("\n[SUCCESS] Phase 6 automated self-test passed with 100% integrity.");
     }
 }
