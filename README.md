@@ -233,22 +233,47 @@ flowchart TD
 - JDK 17 or JDK 21+ (`javac -version`, `java -version`)
 - Git
 
-### Compile & Run from Terminal
-
-#### PowerShell (Windows):
+### 1. Compile All Sources
 ```powershell
-# Compile all source files into out directory:
+# PowerShell (Windows):
 javac -d out (Get-ChildItem -Recurse src -Filter *.java | ForEach-Object { $_.FullName })
 
-# Run the application:
-java -cp out smartpark.Main
-```
-
-#### Bash (Linux/macOS):
-```bash
-# Compile:
+# Bash (Linux/macOS):
 javac -d out $(find src -name "*.java")
+```
 
-# Run:
+### 2. Runtime Modes
+
+#### Mode A: Modern Swing Desktop GUI Dashboard (Default)
+Launches the full interactive desktop dashboard with real-time color-coded slot grids, live clock, KPIs, admission/checkout dialogs, and business analytics.
+```bash
 java -cp out smartpark.Main
 ```
+
+#### Mode B: Interactive Terminal Console Menu (`--cli`)
+Launches the keyboard-driven resilient terminal menu with defensive input parsing and domain error shielding.
+```bash
+java -cp out smartpark.Main --cli
+```
+
+#### Mode C: Automated Concurrency & Persistence Verification (`--test`)
+Executes the non-blocking end-to-end self-test suite (reproduces race condition without sync, proves thread-safe gate admission, tests wait/notify, verifies character/byte streams, and verifies ID collision avoidance).
+```bash
+java -cp out smartpark.Main --test
+```
+
+---
+
+## 🏛️ Comprehensive OOP Principles Demonstrated
+
+| OOP Principle | Where & How It Is Applied in SmartPark |
+| :--- | :--- |
+| **Abstraction** | Abstract root [`Vehicle`](file:///d:/SmartPark/src/smartpark/model/Vehicle.java) and intermediate [`MotorVehicle`](file:///d:/SmartPark/src/smartpark/model/MotorVehicle.java). Pure strategy contract [`Payment`](file:///d:/SmartPark/src/smartpark/service/Payment.java). |
+| **Encapsulation** | Strict private fields with defensive state validation in [`ParkingSlot`](file:///d:/SmartPark/src/smartpark/model/ParkingSlot.java) and [`Floor`](file:///d:/SmartPark/src/smartpark/model/Floor.java); zero invalid states. |
+| **Inheritance** | Hierarchical specialization: `Vehicle` &rarr; `MotorVehicle` &rarr; `Car`, `Bike`, `Truck`. |
+| **Polymorphism** | Dynamic method dispatch on `calculateFee(int hours)` and strategy payment execution (`pay(double amount)`). Constructor chaining via `this(...)` and `super(...)`. |
+| **Composition** | `Floor` "has-a" fixed array of `ParkingSlot[]`; `ParkingLot` "has-a" array of `Floor[]`. |
+| **Concurrency** | Monitor locks (`synchronized`), wait/notify coordination (`wait()` / `notifyAll()`), daemon overstay thread (`setDaemon(true)`), and volatile cache visibility. |
+| **Persistence** | Dual streams: Character stream (`BufferedReader`/`BufferedWriter`) for CSV active tickets; byte stream (`DataOutputStream` on `FileOutputStream(append=true)`) for binary audit logs. |
+| **Decoupling** | Clean MVC architecture: `ParkingLot` service has zero UI imports or `System.out` calls; powers both CLI and GUI seamlessly. |
+

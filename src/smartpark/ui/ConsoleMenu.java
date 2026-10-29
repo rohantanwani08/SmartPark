@@ -67,10 +67,13 @@ public class ConsoleMenu {
                         handleViewTicketHistory();
                         break;
                     case 6:
+                        handleViewAnalytics();
+                        break;
+                    case 7:
                         handleExitSystem();
                         break;
                     default:
-                        System.out.println("[WARNING] Invalid option. Please enter a number between 1 and 6.\n");
+                        System.out.println("[WARNING] Invalid option. Please enter a number between 1 and 7.\n");
                 }
             } catch (Exception e) {
                 System.out.println("\n[ERROR] An unexpected error occurred: " + e.getMessage());
@@ -94,8 +97,14 @@ public class ConsoleMenu {
         System.out.println("|  [3] View Facility Status & Capacity Breakdown               |");
         System.out.println("|  [4] View Currently Active Tickets                           |");
         System.out.println("|  [5] View Settled Ticket History                             |");
-        System.out.println("|  [6] Exit System                                             |");
+        System.out.println("|  [6] View Facility Analytics & Insights                      |");
+        System.out.println("|  [7] Exit System                                             |");
         System.out.println("+--------------------------------------------------------------+");
+    }
+
+    private void handleViewAnalytics() {
+        smartpark.service.AnalyticsService analytics = new smartpark.service.AnalyticsService(parkingLot);
+        System.out.println("\n" + analytics.getExecutiveSummary());
     }
 
     private void handleParkVehicle() {

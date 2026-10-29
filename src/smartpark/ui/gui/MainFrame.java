@@ -76,6 +76,7 @@ public class MainFrame extends JFrame {
     private DefaultTableModel activeTableModel;
     private DefaultTableModel historyTableModel;
     private JPanel gridContainer;
+    private javax.swing.JTextArea analyticsReportArea;
 
     // Colors
     private static final Color COLOR_FREE = new Color(46, 125, 50);       // Forest Green
@@ -126,6 +127,9 @@ public class MainFrame extends JFrame {
 
         // Tab 3: Historical Audit Ledger
         tabbedPane.addTab("📜 Financial Audit Trail", createHistoryTablePanel());
+
+        // Tab 4: Executive Business Analytics & Insights
+        tabbedPane.addTab("📊 Analytics & Insights", createAnalyticsPanel());
 
         add(tabbedPane, BorderLayout.CENTER);
 
@@ -223,6 +227,31 @@ public class MainFrame extends JFrame {
         table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
 
         panel.add(new JScrollPane(table), BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createAnalyticsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        panel.setBackground(Color.WHITE);
+
+        analyticsReportArea = new javax.swing.JTextArea();
+        analyticsReportArea.setEditable(false);
+        analyticsReportArea.setFont(new Font("Consolas", Font.PLAIN, 13));
+        analyticsReportArea.setBackground(new Color(248, 249, 250));
+        analyticsReportArea.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+
+        JScrollPane scrollPane = new JScrollPane(analyticsReportArea);
+        scrollPane.setBorder(BorderFactory.createLineBorder(new Color(220, 224, 230), 1));
+
+        JPanel topBar = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        topBar.setBackground(Color.WHITE);
+        JButton refreshAnalyticsBtn = createStyledButton("🔄 Refresh Analytics", COLOR_ACCENT);
+        refreshAnalyticsBtn.addActionListener(e -> refreshDashboard());
+        topBar.add(refreshAnalyticsBtn);
+
+        panel.add(topBar, BorderLayout.NORTH);
+        panel.add(scrollPane, BorderLayout.CENTER);
         return panel;
     }
 
@@ -358,6 +387,12 @@ public class MainFrame extends JFrame {
                     });
                 }
             } catch (Exception ignored) {}
+        }
+
+        // 5. Update Executive Analytics Report Area
+        if (analyticsReportArea != null) {
+            smartpark.service.AnalyticsService analytics = new smartpark.service.AnalyticsService(parkingLot);
+            analyticsReportArea.setText(analytics.getExecutiveSummary());
         }
     }
 
